@@ -22,9 +22,9 @@ input ENUM_TIMEFRAMES HigherTimeframe = PERIOD_D1;                              
 input int MaxOpenTrades = 3;                                                     // Maximum open trades
 input int Slippage = 5;                                                          // Slippage in points
 
-input group "Risk Management" input double RiskPerTradePercent = 1.0; // Risk per trade (% of balance)
-input int StopLossPips = 300;                                         // Default SL (30 pips for XAUUSD)
-input int TakeProfitPips = 600;                                       // Default TP (60 pips for XAUUSD)
+input group "Risk Management" double RiskPerTradePercent = 1.0; // Risk per trade (% of balance)
+int StopLossPips = 300;                                         // Default SL (30 pips for XAUUSD)
+int TakeProfitPips = 600;                                       // Default TP (60 pips for XAUUSD)
 input bool UseAutoRR = true;                                          // Use automatic risk-reward
 input double MinRiskReward = 2.0;                                     // Minimum risk:reward ratio
 
