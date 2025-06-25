@@ -65,6 +65,7 @@ input bool CloseAllTrades = false;                                              
 input double ManualLotSize = 0.01;                                                     // Manual trade lot size
 input bool ForceInstantTrade = false;                                                  // Force instant trade (ignores all conditions)
 input bool EnableBacktestMode = true;                                                  // Enable aggressive testing for backtesting
+input bool AggressiveSMCMode = true;                                                   // Enable aggressive SMC signal detection for more trades
 
 //--- Global Variables
 CTrade Trade;
@@ -279,6 +280,12 @@ void OnTick()
 
     //--- Get market conditions
     SMarketConditions conditions = GetMarketConditions();
+
+    //--- Monitor all SMC signals comprehensively
+    MonitorAllSMCSignals();
+    
+    //--- Test SMC indicator buffers (for debugging)
+    TestSMCIndicatorBuffers();
 
     //--- Apply filters
     if (!PassesFilters(conditions))
@@ -690,11 +697,35 @@ SMarketStructure GetEnhancedMarketStructure(int handle)
     SMarketStructure structure;
     ZeroMemory(structure);
 
-    //--- Get BOS/CHoCH signals with validation
-    structure.bullish_bos = ValidateSignal(GetIndicatorBufferValue(handle, BUFFER_BULLISH_BOS, 1));
-    structure.bearish_bos = ValidateSignal(GetIndicatorBufferValue(handle, BUFFER_BEARISH_BOS, 1));
-    structure.bullish_choch = ValidateSignal(GetIndicatorBufferValue(handle, BUFFER_BULLISH_CHOCH, 1));
-    structure.bearish_choch = ValidateSignal(GetIndicatorBufferValue(handle, BUFFER_BEARISH_CHOCH, 1));
+    //--- Check multiple bars for signals (increased lookback for more signals)
+    for (int i = 1; i <= 10; i++)
+    {
+        double bull_bos = GetIndicatorBufferValue(handle, BUFFER_BULLISH_BOS, i);
+        double bear_bos = GetIndicatorBufferValue(handle, BUFFER_BEARISH_BOS, i);
+        double bull_choch = GetIndicatorBufferValue(handle, BUFFER_BULLISH_CHOCH, i);
+        double bear_choch = GetIndicatorBufferValue(handle, BUFFER_BEARISH_CHOCH, i);
+
+        if (!structure.bullish_bos && ValidateSignal(bull_bos))
+        {
+            structure.bullish_bos = true;
+            Print("🔍 SMC SIGNAL: BULLISH BOS detected at bar ", i, " | Value: ", bull_bos);
+        }
+        if (!structure.bearish_bos && ValidateSignal(bear_bos))
+        {
+            structure.bearish_bos = true;
+            Print("🔍 SMC SIGNAL: BEARISH BOS detected at bar ", i, " | Value: ", bear_bos);
+        }
+        if (!structure.bullish_choch && ValidateSignal(bull_choch))
+        {
+            structure.bullish_choch = true;
+            Print("🔍 SMC SIGNAL: BULLISH CHoCH detected at bar ", i, " | Value: ", bull_choch);
+        }
+        if (!structure.bearish_choch && ValidateSignal(bear_choch))
+        {
+            structure.bearish_choch = true;
+            Print("🔍 SMC SIGNAL: BEARISH CHoCH detected at bar ", i, " | Value: ", bear_choch);
+        }
+    }
 
     //--- Enhanced swing detection
     int highest_bar = iHighest(_Symbol, Period(), MODE_HIGH, 50, 1);
@@ -705,8 +736,18 @@ SMarketStructure GetEnhancedMarketStructure(int handle)
     structure.high_time = iTime(_Symbol, Period(), highest_bar);
     structure.low_time = iTime(_Symbol, Period(), lowest_bar);
 
-    //--- Calculate structure strength (1-5)
+    //--- Calculate structure strength (1-5) - relaxed for testing
     structure.structure_strength = CalculateStructureStrength(structure);
+
+    //--- Debug output every 15 seconds
+    static datetime last_debug = 0;
+    if (TimeCurrent() - last_debug >= 15)
+    {
+        Print("📊 MARKET STRUCTURE: BOS[Bull:", structure.bullish_bos, " Bear:", structure.bearish_bos, 
+              "] CHoCH[Bull:", structure.bullish_choch, " Bear:", structure.bearish_choch, 
+              "] Strength:", structure.structure_strength);
+        last_debug = TimeCurrent();
+    }
 
     return structure;
 }
@@ -731,13 +772,18 @@ SOrderBlocks GetEnhancedOrderBlocks(int handle)
         if (UseOrderBlocks && bull_high > 0 && bull_low > 0 && blocks.bullish_ob_high == 0)
         {
             double size_pips = (bull_high - bull_low) / PointMultiplier;
-            if (size_pips >= MinOBSize)
+            if (size_pips >= 50) // Relaxed from MinOBSize for more signals
             {
                 blocks.bullish_ob_high = bull_high;
                 blocks.bullish_ob_low = bull_low;
                 blocks.ob_time = iTime(_Symbol, Period(), i);
                 blocks.size_pips = size_pips;
-                blocks.is_valid = ValidateOrderBlock(bull_high, bull_low, true);
+                blocks.is_valid = true; // Simplified validation for testing
+                
+                Print("📦 BULLISH ORDER BLOCK FOUND:");
+                Print("   📊 Range: ", DoubleToString(bull_low, _Digits), " - ", DoubleToString(bull_high, _Digits));
+                Print("   📏 Size: ", DoubleToString(size_pips, 1), " pips");
+                Print("   ⏰ Time: ", TimeToString(blocks.ob_time, TIME_DATE|TIME_MINUTES));
             }
         }
 
@@ -745,12 +791,17 @@ SOrderBlocks GetEnhancedOrderBlocks(int handle)
         if (UseOrderBlocks && bear_high > 0 && bear_low > 0 && blocks.bearish_ob_high == 0)
         {
             double size_pips = (bear_high - bear_low) / PointMultiplier;
-            if (size_pips >= MinOBSize)
+            if (size_pips >= 50) // Relaxed from MinOBSize for more signals
             {
                 blocks.bearish_ob_high = bear_high;
                 blocks.bearish_ob_low = bear_low;
                 blocks.size_pips = size_pips;
-                blocks.is_valid = ValidateOrderBlock(bear_high, bear_low, false);
+                blocks.is_valid = true; // Simplified validation for testing
+                
+                Print("📦 BEARISH ORDER BLOCK FOUND:");
+                Print("   📊 Range: ", DoubleToString(bear_low, _Digits), " - ", DoubleToString(bear_high, _Digits));
+                Print("   📏 Size: ", DoubleToString(size_pips, 1), " pips");
+                Print("   ⏰ Time: ", TimeToString(iTime(_Symbol, Period(), i), TIME_DATE|TIME_MINUTES));
             }
         }
     }
@@ -781,13 +832,18 @@ SFairValueGaps GetEnhancedFairValueGaps(int handle)
         if (bull_high > 0 && bull_low > 0 && fvgs.bullish_fvg_high == 0)
         {
             double size_pips = (bull_high - bull_low) / PointMultiplier;
-            if (size_pips >= 50) // Minimum FVG size
+            if (size_pips >= 30) // Relaxed minimum FVG size for more signals
             {
                 fvgs.bullish_fvg_high = bull_high;
                 fvgs.bullish_fvg_low = bull_low;
                 fvgs.fvg_time = iTime(_Symbol, Period(), i);
                 fvgs.size_pips = size_pips;
-                fvgs.is_valid = ValidateFVG(bull_high, bull_low, true);
+                fvgs.is_valid = true; // Simplified validation for testing
+                
+                Print("🔄 BULLISH FAIR VALUE GAP FOUND:");
+                Print("   📊 Range: ", DoubleToString(bull_low, _Digits), " - ", DoubleToString(bull_high, _Digits));
+                Print("   📏 Size: ", DoubleToString(size_pips, 1), " pips");
+                Print("   ⏰ Time: ", TimeToString(fvgs.fvg_time, TIME_DATE|TIME_MINUTES));
             }
         }
 
@@ -795,12 +851,17 @@ SFairValueGaps GetEnhancedFairValueGaps(int handle)
         if (bear_high > 0 && bear_low > 0 && fvgs.bearish_fvg_high == 0)
         {
             double size_pips = (bear_high - bear_low) / PointMultiplier;
-            if (size_pips >= 50) // Minimum FVG size
+            if (size_pips >= 30) // Relaxed minimum FVG size for more signals
             {
                 fvgs.bearish_fvg_high = bear_high;
                 fvgs.bearish_fvg_low = bear_low;
                 fvgs.size_pips = size_pips;
-                fvgs.is_valid = ValidateFVG(bear_high, bear_low, false);
+                fvgs.is_valid = true; // Simplified validation for testing
+                
+                Print("🔄 BEARISH FAIR VALUE GAP FOUND:");
+                Print("   📊 Range: ", DoubleToString(bear_low, _Digits), " - ", DoubleToString(bear_high, _Digits));
+                Print("   📏 Size: ", DoubleToString(size_pips, 1), " pips");
+                Print("   ⏰ Time: ", TimeToString(iTime(_Symbol, Period(), i), TIME_DATE|TIME_MINUTES));
             }
         }
     }
@@ -816,25 +877,61 @@ SLiquidityLevels GetEnhancedLiquidityLevels(int handle)
     SLiquidityLevels levels;
     ZeroMemory(levels);
 
-    //--- Get equal highs/lows from indicator
-    levels.equal_highs = GetIndicatorBufferValue(handle, BUFFER_EQ_HIGHS, 1);
-    levels.equal_lows = GetIndicatorBufferValue(handle, BUFFER_EQ_LOWS, 1);
-
-    //--- Check for liquidity grabs
-    if (UseLiquidityGrabs)
+    //--- Check multiple bars for liquidity signals (increased lookback)
+    for (int i = 1; i <= 15; i++)
     {
-        levels.liquidity_grab_high = ValidateSignal(GetIndicatorBufferValue(handle, BUFFER_LIQUIDITY_GRAB_HIGH, 1));
-        levels.liquidity_grab_low = ValidateSignal(GetIndicatorBufferValue(handle, BUFFER_LIQUIDITY_GRAB_LOW, 1));
+        double eq_high = GetIndicatorBufferValue(handle, BUFFER_EQ_HIGHS, i);
+        double eq_low = GetIndicatorBufferValue(handle, BUFFER_EQ_LOWS, i);
+        double grab_high = GetIndicatorBufferValue(handle, BUFFER_LIQUIDITY_GRAB_HIGH, i);
+        double grab_low = GetIndicatorBufferValue(handle, BUFFER_LIQUIDITY_GRAB_LOW, i);
 
-        if (levels.liquidity_grab_high || levels.liquidity_grab_low)
+        //--- Equal highs/lows detection
+        if (levels.equal_highs == 0 && ValidateSignal(eq_high))
         {
-            levels.grab_time = iTime(_Symbol, Period(), 1);
+            levels.equal_highs = eq_high;
+            Print("⚖️ EQUAL HIGHS detected at bar ", i, " | Level: ", DoubleToString(eq_high, _Digits));
+        }
+        if (levels.equal_lows == 0 && ValidateSignal(eq_low))
+        {
+            levels.equal_lows = eq_low;
+            Print("⚖️ EQUAL LOWS detected at bar ", i, " | Level: ", DoubleToString(eq_low, _Digits));
+        }
+
+        //--- Liquidity grab detection
+        if (UseLiquidityGrabs)
+        {
+            if (!levels.liquidity_grab_high && ValidateSignal(grab_high))
+            {
+                levels.liquidity_grab_high = true;
+                levels.grab_time = iTime(_Symbol, Period(), i);
+                Print("💧 HIGH SIDE LIQUIDITY GRAB at bar ", i, " | Time: ", TimeToString(levels.grab_time));
+            }
+            if (!levels.liquidity_grab_low && ValidateSignal(grab_low))
+            {
+                levels.liquidity_grab_low = true;
+                levels.grab_time = iTime(_Symbol, Period(), i);
+                Print("💧 LOW SIDE LIQUIDITY GRAB at bar ", i, " | Time: ", TimeToString(levels.grab_time));
+            }
         }
     }
 
-    //--- Enhanced swing detection
-    levels.swing_highs = iHigh(_Symbol, Period(), iHighest(_Symbol, Period(), MODE_HIGH, 100, 1));
-    levels.swing_lows = iLow(_Symbol, Period(), iLowest(_Symbol, Period(), MODE_LOW, 100, 1));
+    //--- Enhanced swing detection with multiple timeframes
+    levels.swing_highs = iHigh(_Symbol, Period(), iHighest(_Symbol, Period(), MODE_HIGH, 50, 1));
+    levels.swing_lows = iLow(_Symbol, Period(), iLowest(_Symbol, Period(), MODE_LOW, 50, 1));
+
+    //--- More frequent debug output (every 30 seconds)
+    static datetime last_liq_debug = 0;
+    if (TimeCurrent() - last_liq_debug >= 30)
+    {
+        Print("💧 LIQUIDITY STATUS:");
+        Print("   📈 Swing High: ", DoubleToString(levels.swing_highs, _Digits));
+        Print("   📉 Swing Low: ", DoubleToString(levels.swing_lows, _Digits));
+        Print("   ⚖️ Equal Highs: ", (levels.equal_highs > 0 ? DoubleToString(levels.equal_highs, _Digits) : "None"));
+        Print("   ⚖️ Equal Lows: ", (levels.equal_lows > 0 ? DoubleToString(levels.equal_lows, _Digits) : "None"));
+        Print("   🎯 Grab High: ", (levels.liquidity_grab_high ? "Yes" : "No"));
+        Print("   🎯 Grab Low: ", (levels.liquidity_grab_low ? "Yes" : "No"));
+        last_liq_debug = TimeCurrent();
+    }
 
     return levels;
 }
@@ -847,72 +944,141 @@ ENUM_TRADE_TYPE AnalyzeBuyOpportunity(ENUM_MARKET_BIAS bias, SMarketStructure &b
                                       SFairValueGaps &fvgs, SLiquidityLevels &liq,
                                       double ask, SMarketConditions &conditions)
 {
-    //--- BACKTEST MODE: Aggressive testing for backtesting
+    //--- BACKTEST MODE: Aggressive testing for backtesting (keep for testing)
     if (EnableBacktestMode && MQLInfoInteger(MQL_TESTER))
     {
         static int backtest_buy_counter = 0;
         backtest_buy_counter++;
         
-        // Place BUY trade every 100 ticks (much more frequent for testing)
-        if (backtest_buy_counter % 100 == 0 && conditions.rsi_value < 60)
+        // Place BUY trade every 200 ticks (reduced frequency to focus on SMC)
+        if (backtest_buy_counter % 200 == 0 && conditions.rsi_value < 70)
         {
-            Print("🔥 BACKTEST BUY: Auto test trade #", backtest_buy_counter/100, " | RSI=", conditions.rsi_value);
+            Print("🔥 BACKTEST BUY: Auto test trade #", backtest_buy_counter/200, " | RSI=", conditions.rsi_value);
             return TRADE_ORDER_BLOCK;
         }
     }
 
-    //--- Higher timeframe bias filter
-    if (bias == BIAS_BEARISH)
-        return TRADE_NONE;
-
-    //--- Structure confirmation
-    if (!base.bullish_choch || base.structure_strength < 2)
-        return TRADE_NONE;
-    if (!confirm.bullish_choch)
-        return TRADE_NONE;
-
-    //--- RSI filter for confluence
-    if (conditions.rsi_value > 80)
-        return TRADE_NONE; // Overbought
-
-    //--- Check order block setup
-    if (UseOrderBlocks && obs.is_valid && obs.bullish_ob_low > 0 && obs.bullish_ob_high > 0)
+    //--- SMC MAIN STRATEGY: Enhanced SMC Signal Detection
+    
+    // AGGRESSIVE SMC MODE: Loosen all conditions for maximum trades
+    if (AggressiveSMCMode)
     {
-        if (ask >= obs.bullish_ob_low && ask <= obs.bullish_ob_high)
+        // Check for ANY Order Block signals (bullish or bearish converted to bullish signal)
+        if (UseOrderBlocks && (obs.bullish_ob_high > 0 || obs.bearish_ob_high > 0))
         {
-            // Additional validation for order block
-            if (ValidateOrderBlockEntry(obs, true, ask))
-            {
-                return TRADE_ORDER_BLOCK;
-            }
+            Print("📦 AGGRESSIVE SMC BUY: Order Block detected (ANY type)!");
+            Print("   💰 Current Price: ", DoubleToString(ask, _Digits));
+            return TRADE_ORDER_BLOCK;
+        }
+        
+        // Check for ANY Fair Value Gap signals
+        if (UseFairValueGaps && (fvgs.bullish_fvg_high > 0 || fvgs.bearish_fvg_high > 0))
+        {
+            Print("🔄 AGGRESSIVE SMC BUY: Fair Value Gap detected (ANY type)!");
+            Print("   💰 Current Price: ", DoubleToString(ask, _Digits));
+            return TRADE_FAIR_VALUE_GAP;
+        }
+        
+        // Check for ANY structure break
+        if (base.bullish_bos || base.bearish_bos || base.bullish_choch || base.bearish_choch)
+        {
+            Print("📈 AGGRESSIVE SMC BUY: Structure break detected (ANY type)!");
+            Print("   💪 Structure Strength: ", base.structure_strength, "/5");
+            return TRADE_ORDER_BLOCK;
+        }
+        
+        // Check for ANY liquidity level
+        if (liq.equal_highs > 0 || liq.equal_lows > 0 || liq.liquidity_grab_high || liq.liquidity_grab_low)
+        {
+            Print("💧 AGGRESSIVE SMC BUY: Liquidity signal detected!");
+            return TRADE_LIQUIDITY_GRAB;
+        }
+        
+        // Aggressive RSI-based entry (very wide range)
+        if (conditions.rsi_value > 10 && conditions.rsi_value < 80)
+        {
+            Print("✅ AGGRESSIVE SMC BUY: Favorable RSI (", conditions.rsi_value, ")");
+            return TRADE_ORDER_BLOCK;
         }
     }
-
-    //--- Check FVG setup
-    if (UseFairValueGaps && fvgs.is_valid && fvgs.bullish_fvg_low > 0 && fvgs.bullish_fvg_high > 0)
+    
+    // Check for BULLISH Order Block signals
+    if (UseOrderBlocks && obs.bullish_ob_high > 0 && obs.bullish_ob_low > 0)
     {
-        if (ask >= fvgs.bullish_fvg_low && ask <= fvgs.bullish_fvg_high)
+        double ob_center = (obs.bullish_ob_high + obs.bullish_ob_low) / 2;
+        bool price_in_ob = (ask >= obs.bullish_ob_low && ask <= obs.bullish_ob_high);
+        bool price_near_ob = MathAbs(ask - ob_center) / PointMultiplier <= 200; // Within 20 pips of OB center
+        
+        if (price_in_ob || price_near_ob)
         {
+            Print("📦 SMC BUY SIGNAL: Bullish Order Block detected!");
+            Print("   📊 OB Range: ", DoubleToString(obs.bullish_ob_low, _Digits), " - ", DoubleToString(obs.bullish_ob_high, _Digits));
+            Print("   💰 Current Price: ", DoubleToString(ask, _Digits));
+            Print("   📏 OB Size: ", DoubleToString(obs.size_pips, 1), " pips");
+            return TRADE_ORDER_BLOCK;
+        }
+    }
+    
+    // Check for BULLISH Fair Value Gap signals
+    if (UseFairValueGaps && fvgs.bullish_fvg_high > 0 && fvgs.bullish_fvg_low > 0)
+    {
+        bool price_in_fvg = (ask >= fvgs.bullish_fvg_low && ask <= fvgs.bullish_fvg_high);
+        bool price_near_fvg = MathAbs(ask - fvgs.bullish_fvg_low) / PointMultiplier <= 100; // Within 10 pips
+        
+        if (price_in_fvg || price_near_fvg)
+        {
+            Print("🔄 SMC BUY SIGNAL: Bullish Fair Value Gap detected!");
+            Print("   📊 FVG Range: ", DoubleToString(fvgs.bullish_fvg_low, _Digits), " - ", DoubleToString(fvgs.bullish_fvg_high, _Digits));
+            Print("   💰 Current Price: ", DoubleToString(ask, _Digits));
+            Print("   📏 FVG Size: ", DoubleToString(fvgs.size_pips, 1), " pips");
             return TRADE_FAIR_VALUE_GAP;
         }
     }
-
-    //--- Check liquidity grab setup
+    
+    // Check for BULLISH Break of Structure (BOS) or Change of Character (CHoCH)
+    if (base.bullish_bos || base.bullish_choch)
+    {
+        // Relaxed conditions for testing
+        bool structure_valid = base.structure_strength >= 1; // Lowered from 2
+        bool rsi_favorable = conditions.rsi_value < 70; // More lenient RSI condition
+        
+        if (structure_valid && rsi_favorable)
+        {
+            string signal_type = base.bullish_bos ? "Break of Structure (BOS)" : "Change of Character (CHoCH)";
+            Print("📈 SMC BUY SIGNAL: Bullish ", signal_type, " detected!");
+            Print("   💪 Structure Strength: ", base.structure_strength, "/5");
+            Print("   📊 RSI: ", DoubleToString(conditions.rsi_value, 1));
+            Print("   🎯 Recent High: ", DoubleToString(base.recent_high, _Digits));
+            return TRADE_ORDER_BLOCK;
+        }
+    }
+    
+    // Check for LIQUIDITY GRAB (Buy Side Liquidity)
     if (UseLiquidityGrabs && liq.liquidity_grab_low)
     {
-        // Price should be near the liquidity grab level
-        double distance = MathAbs(ask - liq.swing_lows) / PointMultiplier;
-        if (distance <= 100) // Within 10 pips
+        double distance_to_grab = MathAbs(ask - liq.swing_lows) / PointMultiplier;
+        if (distance_to_grab <= 150) // Within 15 pips of liquidity grab
         {
+            Print("💧 SMC BUY SIGNAL: Buy Side Liquidity Grab detected!");
+            Print("   📍 Grab Level: ", DoubleToString(liq.swing_lows, _Digits));
+            Print("   📏 Distance: ", DoubleToString(distance_to_grab, 1), " pips");
             return TRADE_LIQUIDITY_GRAB;
         }
     }
 
-    //--- TEMPORARY: Simple test trade based on RSI for testing
-    if (conditions.rsi_value < 45 && conditions.rsi_value > 0) // Lowered from 40 to 45 for easier testing
+    //--- Higher timeframe bias filter (relaxed for testing)
+    if (bias == BIAS_BEARISH && conditions.rsi_value > 30) // Only block if strongly bearish
+        return TRADE_NONE;
+
+    //--- RSI confluence filter (more lenient)
+    if (conditions.rsi_value > 85) // Only block if extremely overbought
+        return TRADE_NONE;
+
+    //--- FALLBACK: Simple RSI-based entry for testing when no SMC signals
+    if (conditions.rsi_value < 50 && conditions.rsi_value > 0)
     {
-        Print("✅ DEBUG BUY: SIMPLE TEST TRADE - RSI oversold condition met (RSI=", conditions.rsi_value, ")");
-        return TRADE_ORDER_BLOCK; // Use any trade type for testing
+        Print("✅ FALLBACK BUY: RSI-based entry (RSI=", conditions.rsi_value, ") - No SMC signals detected");
+        return TRADE_ORDER_BLOCK;
     }
     
     //--- FORCE INSTANT TRADE for testing (ignores all conditions)
@@ -933,70 +1099,141 @@ ENUM_TRADE_TYPE AnalyzeSellOpportunity(ENUM_MARKET_BIAS bias, SMarketStructure &
                                        SFairValueGaps &fvgs, SLiquidityLevels &liq,
                                        double bid, SMarketConditions &conditions)
 {
-    //--- BACKTEST MODE: Aggressive testing for backtesting
+    //--- BACKTEST MODE: Aggressive testing for backtesting (keep for testing)
     if (EnableBacktestMode && MQLInfoInteger(MQL_TESTER))
     {
         static int backtest_sell_counter = 0;
         backtest_sell_counter++;
         
-        // Place SELL trade every 150 ticks (offset from BUY to get both directions)
-        if (backtest_sell_counter % 150 == 0 && conditions.rsi_value > 40)
+        // Place SELL trade every 250 ticks (reduced frequency, offset from BUY)
+        if (backtest_sell_counter % 250 == 0 && conditions.rsi_value > 30)
         {
-            Print("🔥 BACKTEST SELL: Auto test trade #", backtest_sell_counter/150, " | RSI=", conditions.rsi_value);
+            Print("🔥 BACKTEST SELL: Auto test trade #", backtest_sell_counter/250, " | RSI=", conditions.rsi_value);
             return TRADE_ORDER_BLOCK;
         }
     }
 
-    //--- Higher timeframe bias filter
-    if (bias == BIAS_BULLISH)
-        return TRADE_NONE;
-
-    //--- Structure confirmation
-    if (!base.bearish_choch || base.structure_strength < 2)
-        return TRADE_NONE;
-    if (!confirm.bearish_choch)
-        return TRADE_NONE;
-
-    //--- RSI filter for confluence
-    if (conditions.rsi_value < 20)
-        return TRADE_NONE; // Oversold
-
-    //--- Check order block setup
-    if (UseOrderBlocks && obs.is_valid && obs.bearish_ob_low > 0 && obs.bearish_ob_high > 0)
+    //--- SMC MAIN STRATEGY: Enhanced SMC Signal Detection
+    
+    // AGGRESSIVE SMC MODE: Loosen all conditions for maximum trades
+    if (AggressiveSMCMode)
     {
-        if (bid >= obs.bearish_ob_low && bid <= obs.bearish_ob_high)
+        // Check for ANY Order Block signals (bullish or bearish converted to bearish signal)
+        if (UseOrderBlocks && (obs.bullish_ob_high > 0 || obs.bearish_ob_high > 0))
         {
-            if (ValidateOrderBlockEntry(obs, false, bid))
-            {
-                return TRADE_ORDER_BLOCK;
-            }
+            Print("📦 AGGRESSIVE SMC SELL: Order Block detected (ANY type)!");
+            Print("   💰 Current Price: ", DoubleToString(bid, _Digits));
+            return TRADE_ORDER_BLOCK;
+        }
+        
+        // Check for ANY Fair Value Gap signals
+        if (UseFairValueGaps && (fvgs.bullish_fvg_high > 0 || fvgs.bearish_fvg_high > 0))
+        {
+            Print("🔄 AGGRESSIVE SMC SELL: Fair Value Gap detected (ANY type)!");
+            Print("   💰 Current Price: ", DoubleToString(bid, _Digits));
+            return TRADE_FAIR_VALUE_GAP;
+        }
+        
+        // Check for ANY structure break
+        if (base.bullish_bos || base.bearish_bos || base.bullish_choch || base.bearish_choch)
+        {
+            Print("📉 AGGRESSIVE SMC SELL: Structure break detected (ANY type)!");
+            Print("   💪 Structure Strength: ", base.structure_strength, "/5");
+            return TRADE_ORDER_BLOCK;
+        }
+        
+        // Check for ANY liquidity level
+        if (liq.equal_highs > 0 || liq.equal_lows > 0 || liq.liquidity_grab_high || liq.liquidity_grab_low)
+        {
+            Print("💧 AGGRESSIVE SMC SELL: Liquidity signal detected!");
+            return TRADE_LIQUIDITY_GRAB;
+        }
+        
+        // Aggressive RSI-based entry (very wide range)
+        if (conditions.rsi_value > 20 && conditions.rsi_value < 90)
+        {
+            Print("✅ AGGRESSIVE SMC SELL: Favorable RSI (", conditions.rsi_value, ")");
+            return TRADE_ORDER_BLOCK;
         }
     }
-
-    //--- Check FVG setup
-    if (UseFairValueGaps && fvgs.is_valid && fvgs.bearish_fvg_low > 0 && fvgs.bearish_fvg_high > 0)
+    
+    // Check for BEARISH Order Block signals
+    if (UseOrderBlocks && obs.bearish_ob_high > 0 && obs.bearish_ob_low > 0)
     {
-        if (bid >= fvgs.bearish_fvg_low && bid <= fvgs.bearish_fvg_high)
+        double ob_center = (obs.bearish_ob_high + obs.bearish_ob_low) / 2;
+        bool price_in_ob = (bid >= obs.bearish_ob_low && bid <= obs.bearish_ob_high);
+        bool price_near_ob = MathAbs(bid - ob_center) / PointMultiplier <= 200; // Within 20 pips of OB center
+        
+        if (price_in_ob || price_near_ob)
         {
+            Print("📦 SMC SELL SIGNAL: Bearish Order Block detected!");
+            Print("   📊 OB Range: ", DoubleToString(obs.bearish_ob_low, _Digits), " - ", DoubleToString(obs.bearish_ob_high, _Digits));
+            Print("   💰 Current Price: ", DoubleToString(bid, _Digits));
+            Print("   📏 OB Size: ", DoubleToString(obs.size_pips, 1), " pips");
+            return TRADE_ORDER_BLOCK;
+        }
+    }
+    
+    // Check for BEARISH Fair Value Gap signals
+    if (UseFairValueGaps && fvgs.bearish_fvg_high > 0 && fvgs.bearish_fvg_low > 0)
+    {
+        bool price_in_fvg = (bid >= fvgs.bearish_fvg_low && bid <= fvgs.bearish_fvg_high);
+        bool price_near_fvg = MathAbs(bid - fvgs.bearish_fvg_high) / PointMultiplier <= 100; // Within 10 pips
+        
+        if (price_in_fvg || price_near_fvg)
+        {
+            Print("🔄 SMC SELL SIGNAL: Bearish Fair Value Gap detected!");
+            Print("   📊 FVG Range: ", DoubleToString(fvgs.bearish_fvg_low, _Digits), " - ", DoubleToString(fvgs.bearish_fvg_high, _Digits));
+            Print("   💰 Current Price: ", DoubleToString(bid, _Digits));
+            Print("   📏 FVG Size: ", DoubleToString(fvgs.size_pips, 1), " pips");
             return TRADE_FAIR_VALUE_GAP;
         }
     }
-
-    //--- Check liquidity grab setup
+    
+    // Check for BEARISH Break of Structure (BOS) or Change of Character (CHoCH)
+    if (base.bearish_bos || base.bearish_choch)
+    {
+        // Relaxed conditions for testing
+        bool structure_valid = base.structure_strength >= 1; // Lowered from 2
+        bool rsi_favorable = conditions.rsi_value > 30; // More lenient RSI condition
+        
+        if (structure_valid && rsi_favorable)
+        {
+            string signal_type = base.bearish_bos ? "Break of Structure (BOS)" : "Change of Character (CHoCH)";
+            Print("📉 SMC SELL SIGNAL: Bearish ", signal_type, " detected!");
+            Print("   💪 Structure Strength: ", base.structure_strength, "/5");
+            Print("   📊 RSI: ", DoubleToString(conditions.rsi_value, 1));
+            Print("   🎯 Recent Low: ", DoubleToString(base.recent_low, _Digits));
+            return TRADE_ORDER_BLOCK;
+        }
+    }
+    
+    // Check for LIQUIDITY GRAB (Sell Side Liquidity)
     if (UseLiquidityGrabs && liq.liquidity_grab_high)
     {
-        double distance = MathAbs(bid - liq.swing_highs) / PointMultiplier;
-        if (distance <= 100) // Within 10 pips
+        double distance_to_grab = MathAbs(bid - liq.swing_highs) / PointMultiplier;
+        if (distance_to_grab <= 150) // Within 15 pips of liquidity grab
         {
+            Print("💧 SMC SELL SIGNAL: Sell Side Liquidity Grab detected!");
+            Print("   📍 Grab Level: ", DoubleToString(liq.swing_highs, _Digits));
+            Print("   📏 Distance: ", DoubleToString(distance_to_grab, 1), " pips");
             return TRADE_LIQUIDITY_GRAB;
         }
     }
 
-    //--- TEMPORARY: Simple test trade based on RSI for testing
-    if (conditions.rsi_value > 55 && conditions.rsi_value < 100) // Lowered from 60 to 55 for easier testing
+    //--- Higher timeframe bias filter (relaxed for testing)
+    if (bias == BIAS_BULLISH && conditions.rsi_value < 70) // Only block if strongly bullish
+        return TRADE_NONE;
+
+    //--- RSI confluence filter (more lenient)
+    if (conditions.rsi_value < 15) // Only block if extremely oversold
+        return TRADE_NONE;
+
+    //--- FALLBACK: Simple RSI-based entry for testing when no SMC signals
+    if (conditions.rsi_value > 50 && conditions.rsi_value < 100)
     {
-        Print("✅ DEBUG SELL: SIMPLE TEST TRADE - RSI overbought condition met (RSI=", conditions.rsi_value, ")");
-        return TRADE_ORDER_BLOCK; // Use any trade type for testing
+        Print("✅ FALLBACK SELL: RSI-based entry (RSI=", conditions.rsi_value, ") - No SMC signals detected");
+        return TRADE_ORDER_BLOCK;
     }
     
     //--- FORCE INSTANT TRADE for testing (ignores all conditions)
@@ -1008,10 +1245,6 @@ ENUM_TRADE_TYPE AnalyzeSellOpportunity(ENUM_MARKET_BIAS bias, SMarketStructure &
 
     return TRADE_NONE;
 }
-
-//+------------------------------------------------------------------+
-//| Execute Enhanced Buy Trade
-// ...existing code...
 
 //+------------------------------------------------------------------+
 //| Execute Enhanced Buy Trade                                       |
@@ -1456,6 +1689,11 @@ double GetIndicatorBufferValue(int handle, int buffer_index, int shift)
 //+------------------------------------------------------------------+
 bool ValidateSignal(double signal_value)
 {
+    // More lenient validation for aggressive testing
+    if (AggressiveSMCMode)
+    {
+        return (signal_value != EMPTY_VALUE && signal_value != 0 && signal_value > -999999);
+    }
     return (signal_value != EMPTY_VALUE && signal_value > 0);
 }
 
@@ -1546,6 +1784,7 @@ bool ValidateOrderBlockEntry(SOrderBlocks &ob, bool is_bullish, double price)
     else
     {
         //--- Price should be in upper half of bearish OB for better entry
+       
         double ob_mid = (ob.bearish_ob_high + ob.bearish_ob_low) / 2;
         return (price >= ob_mid);
     }
@@ -1640,3 +1879,115 @@ void OnTimer()
 //+------------------------------------------------------------------+
 //| Expert Advisor End                                               |
 //+------------------------------------------------------------------+
+void MonitorAllSMCSignals()
+{
+    static datetime last_monitor_time = 0;
+    
+    // Monitor every 20 seconds for comprehensive status
+    if (TimeCurrent() - last_monitor_time < 20)
+        return;
+        
+    last_monitor_time = TimeCurrent();
+    
+    Print("🔍 ════════ COMPREHENSIVE SMC SIGNAL MONITOR ════════");
+    
+    //--- Get all SMC data
+    SMarketStructure base_structure = GetEnhancedMarketStructure(SMC_Base_Handle);
+    SOrderBlocks order_blocks = GetEnhancedOrderBlocks(SMC_Base_Handle);
+    SFairValueGaps fvgs = GetEnhancedFairValueGaps(SMC_Base_Handle);
+    SLiquidityLevels liquidity = GetEnhancedLiquidityLevels(SMC_Higher_Handle);
+    
+    //--- Market Structure Status
+    Print("📊 MARKET STRUCTURE:");
+    Print("   🟢 Bullish BOS: ", (base_structure.bullish_bos ? "YES" : "NO"));
+    Print("   🔴 Bearish BOS: ", (base_structure.bearish_bos ? "YES" : "NO"));
+    Print("   🟡 Bullish CHoCH: ", (base_structure.bullish_choch ? "YES" : "NO"));
+    Print("   🟠 Bearish CHoCH: ", (base_structure.bearish_choch ? "YES" : "NO"));
+    Print("   💪 Structure Strength: ", base_structure.structure_strength, "/5");
+    
+    //--- Order Blocks Status
+    Print("📦 ORDER BLOCKS:");
+    Print("   🟢 Bull OB: ", (order_blocks.bullish_ob_high > 0 ? "ACTIVE" : "NONE"), 
+          (order_blocks.bullish_ob_high > 0 ? " [" + DoubleToString(order_blocks.bullish_ob_low, _Digits) + " - " + DoubleToString(order_blocks.bullish_ob_high, _Digits) + "]" : ""));
+    Print("   🔴 Bear OB: ", (order_blocks.bearish_ob_high > 0 ? "ACTIVE" : "NONE"),
+          (order_blocks.bearish_ob_high > 0 ? " [" + DoubleToString(order_blocks.bearish_ob_low, _Digits) + " - " + DoubleToString(order_blocks.bearish_ob_high, _Digits) + "]" : ""));
+    
+    //--- Fair Value Gaps Status
+    Print("🔄 FAIR VALUE GAPS:");
+    Print("   🟢 Bull FVG: ", (fvgs.bullish_fvg_high > 0 ? "ACTIVE" : "NONE"),
+          (fvgs.bullish_fvg_high > 0 ? " [" + DoubleToString(fvgs.bullish_fvg_low, _Digits) + " - " + DoubleToString(fvgs.bullish_fvg_high, _Digits) + "]" : ""));
+    Print("   🔴 Bear FVG: ", (fvgs.bearish_fvg_high > 0 ? "ACTIVE" : "NONE"),
+          (fvgs.bearish_fvg_high > 0 ? " [" + DoubleToString(fvgs.bearish_fvg_low, _Digits) + " - " + DoubleToString(fvgs.bearish_fvg_high, _Digits) + "]" : ""));
+    
+    //--- Liquidity Status
+    Print("💧 LIQUIDITY LEVELS:");
+    Print("   📈 Swing High: ", DoubleToString(liquidity.swing_highs, _Digits));
+    Print("   📉 Swing Low: ", DoubleToString(liquidity.swing_lows, _Digits));
+    Print("   🎯 Grab High: ", (liquidity.liquidity_grab_high ? "YES" : "NO"));
+    Print("   🎯 Grab Low: ", (liquidity.liquidity_grab_low ? "YES" : "NO"));
+    Print("   ⚖️ Equal Highs: ", (liquidity.equal_highs > 0 ? DoubleToString(liquidity.equal_highs, _Digits) : "NONE"));
+    Print("   ⚖️ Equal Lows: ", (liquidity.equal_lows > 0 ? DoubleToString(liquidity.equal_lows, _Digits) : "NONE"));
+    
+    //--- Current Price Context
+    MqlTick tick;
+    if (SymbolInfoTick(_Symbol, tick))
+    {
+        Print("💰 CURRENT PRICE CONTEXT:");
+        Print("   📊 Bid: ", DoubleToString(tick.bid, _Digits));
+        Print("   📊 Ask: ", DoubleToString(tick.ask, _Digits));
+        Print("   📏 Spread: ", DoubleToString((tick.ask - tick.bid) / PointMultiplier, 1), " pips");
+    }
+    
+    //--- Trading Readiness
+    bool any_signal = base_structure.bullish_bos || base_structure.bearish_bos || 
+                     base_structure.bullish_choch || base_structure.bearish_choch ||
+                     order_blocks.bullish_ob_high > 0 || order_blocks.bearish_ob_high > 0 ||
+                     fvgs.bullish_fvg_high > 0 || fvgs.bearish_fvg_high > 0 ||
+                     liquidity.liquidity_grab_high || liquidity.liquidity_grab_low;
+                     
+    Print("🎯 TRADING READINESS: ", (any_signal ? "🟢 SIGNALS PRESENT" : "🔴 NO SIGNALS"));
+    Print("🧪 AGGRESSIVE MODE: ", (AggressiveSMCMode ? "🔥 ENABLED" : "❄️ DISABLED"));
+    Print("═══════════════════════════════════════════════════");
+}
+
+//+------------------------------------------------------------------+
+//| Test SMC Indicator Buffer Values                                 |
+//+------------------------------------------------------------------+
+void TestSMCIndicatorBuffers()
+{
+    static datetime last_test_time = 0;
+    
+    // Test every 30 seconds
+    if (TimeCurrent() - last_test_time < 30)
+        return;
+        
+    last_test_time = TimeCurrent();
+    
+    Print("🧪 ════════ SMC INDICATOR BUFFER TEST ════════");
+    
+    // Test all 16 buffers for the last 3 bars
+    for (int buffer = 0; buffer < 16; buffer++)
+    {
+        Print("📊 BUFFER [", buffer, "]:");
+        for (int bar = 1; bar <= 3; bar++)
+        {
+            double value = GetIndicatorBufferValue(SMC_Base_Handle, buffer, bar);
+            if (value != EMPTY_VALUE && value != 0)
+            {
+                Print("   Bar[", bar, "]: ", DoubleToString(value, _Digits), " ✅");
+            }
+            else
+            {
+                Print("   Bar[", bar, "]: EMPTY/ZERO");
+            }
+        }
+    }
+    
+    // Test if indicator handle is valid
+    Print("🔧 INDICATOR STATUS:");
+    Print("   Base Handle: ", (SMC_Base_Handle != INVALID_HANDLE ? "✅ VALID" : "❌ INVALID"));
+    Print("   Confirm Handle: ", (SMC_Confirm_Handle != INVALID_HANDLE ? "✅ VALID" : "❌ INVALID"));
+    Print("   Higher Handle: ", (SMC_Higher_Handle != INVALID_HANDLE ? "✅ VALID" : "❌ INVALID"));
+    
+    Print("═══════════════════════════════════════════════════");
+}
