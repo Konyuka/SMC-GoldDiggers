@@ -58,6 +58,14 @@ input bool EnablePartialClose = true;                                           
 input double PartialClosePercent = 50.0;                                              // Partial close percentage
 input int PartialClosePips = 300;                                                     // Partial close trigger (pips)
 
+input group "═════════ MANUAL TESTING ═════════" input bool EnableManualTesting = true; // Enable manual trade triggers
+input bool TriggerBuyTrade = false;                                                    // Trigger a BUY trade now
+input bool TriggerSellTrade = false;                                                   // Trigger a SELL trade now
+input bool CloseAllTrades = false;                                                     // Close all open trades
+input double ManualLotSize = 0.01;                                                     // Manual trade lot size
+input bool ForceInstantTrade = false;                                                  // Force instant trade (ignores all conditions)
+input bool EnableBacktestMode = true;                                                  // Enable aggressive testing for backtesting
+
 //--- Global Variables
 CTrade Trade;
 CPositionInfo PositionInfo;
@@ -215,6 +223,17 @@ int OnInit()
     Print("📊 Higher TF: ", EnumToString(HigherTimeframe));
     Print("💰 Risk per trade: ", RiskPerTradePercent, "%");
     Print("🎯 Min R:R Ratio: ", MinRiskReward);
+    
+    //--- Backtest mode detection
+    if (MQLInfoInteger(MQL_TESTER))
+    {
+        Print("🧪 BACKTEST MODE DETECTED - Aggressive testing enabled");
+        Print("🔥 Auto trades will be placed every 100/150 ticks for testing");
+    }
+    else
+    {
+        Print("📈 LIVE MODE DETECTED - Normal trading logic active");
+    }
 
     return INIT_SUCCEEDED;
 }
@@ -244,6 +263,12 @@ void OnDeinit(const int reason)
 //+------------------------------------------------------------------+
 void OnTick()
 {
+    //--- Check for manual testing triggers first
+    if (EnableManualTesting)
+    {
+        HandleManualTesting();
+    }
+
     //--- Basic checks
     if (!IsValidTradingEnvironment())
         return;
@@ -266,6 +291,176 @@ void OnTick()
     ManageOpenPositions(conditions);
 
     LastTradeTime = TimeCurrent();
+}
+
+//+------------------------------------------------------------------+
+//| Handle Manual Testing                                            |
+//+------------------------------------------------------------------+
+void HandleManualTesting()
+{
+    static bool buy_triggered = false;
+    static bool sell_triggered = false;
+    static bool close_triggered = false;
+    
+    // Debug: Show manual testing status
+    static int debug_counter = 0;
+    debug_counter++;
+    if (debug_counter % 200 == 0) // Print every 200 ticks
+    {
+        Print("🧪 MANUAL TEST STATUS: BuyTrigger=", TriggerBuyTrade, " | SellTrigger=", TriggerSellTrade, " | CloseAll=", CloseAllTrades);
+    }
+    
+    //--- Trigger manual buy trade
+    if (TriggerBuyTrade && !buy_triggered)
+    {
+        buy_triggered = true;
+        Print("🧪 MANUAL TEST: Triggering BUY trade...");
+        PlaceManualTestTrade(ORDER_TYPE_BUY);
+        // Reset the input parameter to prevent multiple triggers
+        // Note: In real implementation, you'd need to modify the input externally
+    }
+    
+    //--- Trigger manual sell trade  
+    if (TriggerSellTrade && !sell_triggered)
+    {
+        sell_triggered = true;
+        Print("🧪 MANUAL TEST: Triggering SELL trade...");
+        PlaceManualTestTrade(ORDER_TYPE_SELL);
+    }
+    
+    //--- Close all trades
+    if (CloseAllTrades && !close_triggered)
+    {
+        close_triggered = true;
+        Print("🧪 MANUAL TEST: Closing all trades...");
+        CloseAllTestTrades();
+    }
+    
+    //--- Reset triggers when inputs are turned off
+    if (!TriggerBuyTrade) buy_triggered = false;
+    if (!TriggerSellTrade) sell_triggered = false;
+    if (!CloseAllTrades) close_triggered = false;
+}
+
+//+------------------------------------------------------------------+
+//| Place Manual Test Trade                                          |
+//+------------------------------------------------------------------+
+void PlaceManualTestTrade(ENUM_ORDER_TYPE order_type)
+{
+    MqlTick current_tick;
+    if (!SymbolInfoTick(_Symbol, current_tick))
+    {
+        Print("❌ Failed to get current tick for manual test");
+        return;
+    }
+    
+    double entry_price = (order_type == ORDER_TYPE_BUY) ? current_tick.ask : current_tick.bid;
+    double sl, tp;
+    
+    //--- Calculate SL/TP for test trade
+    if (order_type == ORDER_TYPE_BUY)
+    {
+        sl = entry_price - (StopLossPips * PointMultiplier);
+        tp = entry_price + (TakeProfitPips * PointMultiplier);
+    }
+    else
+    {
+        sl = entry_price + (StopLossPips * PointMultiplier);
+        tp = entry_price - (TakeProfitPips * PointMultiplier);
+    }
+    
+    //--- Prepare trade request
+    MqlTradeRequest request;
+    MqlTradeResult result;
+    ZeroMemory(request);
+    ZeroMemory(result);
+    
+    request.action = TRADE_ACTION_DEAL;
+    request.symbol = _Symbol;
+    request.volume = ManualLotSize;
+    request.type = order_type;
+    request.price = entry_price;
+    request.sl = NormalizeDouble(sl, _Digits);
+    request.tp = NormalizeDouble(tp, _Digits);
+    request.deviation = Slippage;
+    request.magic = MagicNumber;
+    request.comment = TradeComment + "-MANUAL-TEST";
+    
+    //--- Send order
+    if (OrderSend(request, result))
+    {
+        string direction = (order_type == ORDER_TYPE_BUY) ? "BUY" : "SELL";
+        Print("✅ MANUAL TEST ", direction, " ORDER PLACED:");
+        Print("   📊 Ticket: ", result.order);
+        Print("   💰 Entry: ", DoubleToString(entry_price, _Digits));
+        Print("   🛑 SL: ", DoubleToString(sl, _Digits));
+        Print("   🎯 TP: ", DoubleToString(tp, _Digits));
+        Print("   📈 Lot: ", DoubleToString(ManualLotSize, 2));
+        Print("   🔢 Magic: ", MagicNumber);
+        
+        //--- Apply trade management immediately for testing
+        if (UseTrailingStop)
+        {
+            Print("   🔄 Trailing stop will be applied: ", TrailingStopPips, " pips");
+        }
+        if (UseBreakeven)
+        {
+            Print("   ⚖️ Breakeven will be applied at: ", BreakevenPips, " pips profit");
+        }
+        if (EnablePartialClose)
+        {
+            Print("   📊 Partial close will trigger at: ", PartialClosePips, " pips (", PartialClosePercent, "%)");
+        }
+    }
+    else
+    {
+        Print("❌ MANUAL TEST ORDER FAILED:");
+        Print("   🔴 Error Code: ", result.retcode);
+        Print("   📝 Comment: ", result.comment);
+        Print("   💰 Entry Price: ", DoubleToString(entry_price, _Digits));
+        Print("   📈 Lot Size: ", DoubleToString(ManualLotSize, 2));
+    }
+}
+
+//+------------------------------------------------------------------+
+//| Close All Test Trades                                           |
+//+------------------------------------------------------------------+
+void CloseAllTestTrades()
+{
+    int closed_count = 0;
+    int total_positions = PositionsTotal();
+    
+    Print("🧪 MANUAL TEST: Attempting to close ", total_positions, " positions...");
+    
+    for (int i = PositionsTotal() - 1; i >= 0; i--)
+    {
+        string symbol = PositionGetSymbol(i);
+        if (symbol == "")
+            continue;
+            
+        if (PositionGetInteger(POSITION_MAGIC) != MagicNumber)
+            continue;
+            
+        ulong ticket = PositionGetInteger(POSITION_TICKET);
+        double volume = PositionGetDouble(POSITION_VOLUME);
+        ENUM_POSITION_TYPE pos_type = (ENUM_POSITION_TYPE)PositionGetInteger(POSITION_TYPE);
+        double profit = PositionGetDouble(POSITION_PROFIT);
+        
+        if (Trade.PositionClose(ticket))
+        {
+            closed_count++;
+            string direction = (pos_type == POSITION_TYPE_BUY) ? "BUY" : "SELL";
+            Print("✅ CLOSED ", direction, " Position #", ticket, 
+                  " | Volume: ", DoubleToString(volume, 2), 
+                  " | Profit: $", DoubleToString(profit, 2));
+        }
+        else
+        {
+            Print("❌ Failed to close position #", ticket, " | Error: ", GetLastError());
+        }
+    }
+    
+    Print("🧪 MANUAL TEST COMPLETE: Closed ", closed_count, " out of ", total_positions, " positions");
 }
 
 //+------------------------------------------------------------------+
@@ -322,6 +517,18 @@ SMarketConditions GetMarketConditions()
     if (CopyBuffer(RSI_Handle, 0, 1, 1, rsi_buffer) > 0)
     {
         conditions.rsi_value = rsi_buffer[0];
+        // DEBUG: Print RSI value every tick for testing
+        static int rsi_debug_counter = 0;
+        rsi_debug_counter++;
+        if (rsi_debug_counter % 50 == 0) // Print every 50 ticks
+        {
+            Print("🔍 RSI DEBUG: RSI Value = ", DoubleToString(conditions.rsi_value, 2));
+        }
+    }
+    else
+    {
+        Print("⚠️ RSI ERROR: Failed to copy RSI buffer!");
+        conditions.rsi_value = 50; // Default neutral value
     }
 
     //--- Get spread
@@ -366,13 +573,23 @@ bool PassesFilters(SMarketConditions &conditions)
         return false;
     }
 
-    //--- News filter (placeholder - implement your news API)
-    if (IsHighImpactNewsTime())
-    {
-        Print("📰 High impact news time - skipping trades");
-        return false;
-    }
+    //--- News filter (DISABLED for testing - implement your news API later)
+    // if (IsHighImpactNewsTime())
+    // {
+    //     Print("📰 High impact news time - skipping trades");
+    //     return false;
+    // }
 
+    //--- Debug: Show current market conditions
+    static datetime last_debug_time = 0;
+    if (TimeCurrent() - last_debug_time >= 10) // Print every 10 seconds
+    {
+        Print("✅ DEBUG: All filters passed | RSI: ", DoubleToString(conditions.rsi_value, 1), 
+              " | Spread: ", DoubleToString(conditions.current_spread, 1), " pips",
+              " | ATR%: ", DoubleToString(conditions.atr_percent, 2), "%");
+        last_debug_time = TimeCurrent();
+    }
+    
     return true;
 }
 
@@ -423,8 +640,18 @@ void CheckForTrades(SMarketConditions &conditions)
                                                           confirm_structure, order_blocks,
                                                           fvgs, liquidity, current_tick.ask, conditions);
 
+        // DEBUG: Print buy analysis result
+        static int buy_debug_counter = 0;
+        buy_debug_counter++;
+        if (buy_debug_counter % 100 == 0) // Print every 100 ticks
+        {
+            Print("🔍 BUY ANALYSIS: RSI=", DoubleToString(conditions.rsi_value, 1), 
+                  " | Setup=", EnumToString(buy_setup), " | Positions=", CountPositionsByMagic(MagicNumber, POSITION_TYPE_BUY));
+        }
+
         if (buy_setup != TRADE_NONE)
         {
+            Print("🚀 EXECUTING BUY TRADE! Setup type: ", EnumToString(buy_setup));
             ExecuteEnhancedBuyTrade(current_tick.ask, base_structure, order_blocks,
                                     fvgs, liquidity, buy_setup, conditions);
         }
@@ -437,8 +664,18 @@ void CheckForTrades(SMarketConditions &conditions)
                                                             confirm_structure, order_blocks,
                                                             fvgs, liquidity, current_tick.bid, conditions);
 
+        // DEBUG: Print sell analysis result
+        static int sell_debug_counter = 0;
+        sell_debug_counter++;
+        if (sell_debug_counter % 100 == 0) // Print every 100 ticks
+        {
+            Print("🔍 SELL ANALYSIS: RSI=", DoubleToString(conditions.rsi_value, 1), 
+                  " | Setup=", EnumToString(sell_setup), " | Positions=", CountPositionsByMagic(MagicNumber, POSITION_TYPE_SELL));
+        }
+
         if (sell_setup != TRADE_NONE)
         {
+            Print("🚀 EXECUTING SELL TRADE! Setup type: ", EnumToString(sell_setup));
             ExecuteEnhancedSellTrade(current_tick.bid, base_structure, order_blocks,
                                      fvgs, liquidity, sell_setup, conditions);
         }
@@ -610,6 +847,20 @@ ENUM_TRADE_TYPE AnalyzeBuyOpportunity(ENUM_MARKET_BIAS bias, SMarketStructure &b
                                       SFairValueGaps &fvgs, SLiquidityLevels &liq,
                                       double ask, SMarketConditions &conditions)
 {
+    //--- BACKTEST MODE: Aggressive testing for backtesting
+    if (EnableBacktestMode && MQLInfoInteger(MQL_TESTER))
+    {
+        static int backtest_buy_counter = 0;
+        backtest_buy_counter++;
+        
+        // Place BUY trade every 100 ticks (much more frequent for testing)
+        if (backtest_buy_counter % 100 == 0 && conditions.rsi_value < 60)
+        {
+            Print("🔥 BACKTEST BUY: Auto test trade #", backtest_buy_counter/100, " | RSI=", conditions.rsi_value);
+            return TRADE_ORDER_BLOCK;
+        }
+    }
+
     //--- Higher timeframe bias filter
     if (bias == BIAS_BEARISH)
         return TRADE_NONE;
@@ -657,6 +908,20 @@ ENUM_TRADE_TYPE AnalyzeBuyOpportunity(ENUM_MARKET_BIAS bias, SMarketStructure &b
         }
     }
 
+    //--- TEMPORARY: Simple test trade based on RSI for testing
+    if (conditions.rsi_value < 45 && conditions.rsi_value > 0) // Lowered from 40 to 45 for easier testing
+    {
+        Print("✅ DEBUG BUY: SIMPLE TEST TRADE - RSI oversold condition met (RSI=", conditions.rsi_value, ")");
+        return TRADE_ORDER_BLOCK; // Use any trade type for testing
+    }
+    
+    //--- FORCE INSTANT TRADE for testing (ignores all conditions)
+    if (ForceInstantTrade)
+    {
+        Print("🚨 FORCE BUY: Instant trade triggered - ignoring all conditions!");
+        return TRADE_ORDER_BLOCK;
+    }
+
     return TRADE_NONE;
 }
 
@@ -668,6 +933,20 @@ ENUM_TRADE_TYPE AnalyzeSellOpportunity(ENUM_MARKET_BIAS bias, SMarketStructure &
                                        SFairValueGaps &fvgs, SLiquidityLevels &liq,
                                        double bid, SMarketConditions &conditions)
 {
+    //--- BACKTEST MODE: Aggressive testing for backtesting
+    if (EnableBacktestMode && MQLInfoInteger(MQL_TESTER))
+    {
+        static int backtest_sell_counter = 0;
+        backtest_sell_counter++;
+        
+        // Place SELL trade every 150 ticks (offset from BUY to get both directions)
+        if (backtest_sell_counter % 150 == 0 && conditions.rsi_value > 40)
+        {
+            Print("🔥 BACKTEST SELL: Auto test trade #", backtest_sell_counter/150, " | RSI=", conditions.rsi_value);
+            return TRADE_ORDER_BLOCK;
+        }
+    }
+
     //--- Higher timeframe bias filter
     if (bias == BIAS_BULLISH)
         return TRADE_NONE;
@@ -711,6 +990,20 @@ ENUM_TRADE_TYPE AnalyzeSellOpportunity(ENUM_MARKET_BIAS bias, SMarketStructure &
         {
             return TRADE_LIQUIDITY_GRAB;
         }
+    }
+
+    //--- TEMPORARY: Simple test trade based on RSI for testing
+    if (conditions.rsi_value > 55 && conditions.rsi_value < 100) // Lowered from 60 to 55 for easier testing
+    {
+        Print("✅ DEBUG SELL: SIMPLE TEST TRADE - RSI overbought condition met (RSI=", conditions.rsi_value, ")");
+        return TRADE_ORDER_BLOCK; // Use any trade type for testing
+    }
+    
+    //--- FORCE INSTANT TRADE for testing (ignores all conditions)
+    if (ForceInstantTrade)
+    {
+        Print("🚨 FORCE SELL: Instant trade triggered - ignoring all conditions!");
+        return TRADE_ORDER_BLOCK;
     }
 
     return TRADE_NONE;
@@ -846,7 +1139,12 @@ void SetTrailingStop(ulong ticket, int trailing_pips)
         double new_sl = current_price - trailing_distance;
         if (new_sl > current_sl && new_sl > open_price)
         {
-            Trade.PositionModify(ticket, new_sl, PositionGetDouble(POSITION_TP));
+            if (Trade.PositionModify(ticket, new_sl, PositionGetDouble(POSITION_TP)))
+            {
+                Print("🔄 TRAILING STOP UPDATED - Position #", ticket, 
+                      " | New SL: ", DoubleToString(new_sl, _Digits),
+                      " | Old SL: ", DoubleToString(current_sl, _Digits));
+            }
         }
     }
     else if (pos_type == POSITION_TYPE_SELL)
@@ -854,7 +1152,12 @@ void SetTrailingStop(ulong ticket, int trailing_pips)
         double new_sl = current_price + trailing_distance;
         if (new_sl < current_sl && new_sl < open_price)
         {
-            Trade.PositionModify(ticket, new_sl, PositionGetDouble(POSITION_TP));
+            if (Trade.PositionModify(ticket, new_sl, PositionGetDouble(POSITION_TP)))
+            {
+                Print("🔄 TRAILING STOP UPDATED - Position #", ticket, 
+                      " | New SL: ", DoubleToString(new_sl, _Digits),
+                      " | Old SL: ", DoubleToString(current_sl, _Digits));
+            }
         }
     }
 }
@@ -877,16 +1180,24 @@ void SetBreakeven(ulong ticket, int breakeven_pips)
     {
         if (current_price >= open_price + breakeven_distance && current_sl < open_price)
         {
-            Trade.PositionModify(ticket, open_price, PositionGetDouble(POSITION_TP));
-            Print("✅ Breakeven set for buy position: ", ticket);
+            if (Trade.PositionModify(ticket, open_price, PositionGetDouble(POSITION_TP)))
+            {
+                Print("⚖️ BREAKEVEN SET - BUY Position #", ticket, 
+                      " | SL moved to entry: ", DoubleToString(open_price, _Digits),
+                      " | Profit secured: ", DoubleToString(breakeven_pips, 0), " pips");
+            }
         }
     }
     else if (pos_type == POSITION_TYPE_SELL)
     {
         if (current_price <= open_price - breakeven_distance && current_sl > open_price)
         {
-            Trade.PositionModify(ticket, open_price, PositionGetDouble(POSITION_TP));
-            Print("✅ Breakeven set for sell position: ", ticket);
+            if (Trade.PositionModify(ticket, open_price, PositionGetDouble(POSITION_TP)))
+            {
+                Print("⚖️ BREAKEVEN SET - SELL Position #", ticket, 
+                      " | SL moved to entry: ", DoubleToString(open_price, _Digits),
+                      " | Profit secured: ", DoubleToString(breakeven_pips, 0), " pips");
+            }
         }
     }
 }
@@ -921,8 +1232,15 @@ void SetPartialClose(ulong ticket, int trigger_pips, double percent)
         double close_volume = NormalizeDouble(volume * (percent / 100.0), 2);
         if (close_volume >= SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_MIN))
         {
-            Trade.PositionClosePartial(ticket, close_volume);
-            Print("📊 Partial close executed: ", close_volume, " lots at ", current_price);
+            if (Trade.PositionClosePartial(ticket, close_volume))
+            {
+                string direction = (pos_type == POSITION_TYPE_BUY) ? "BUY" : "SELL";
+                Print("📊 PARTIAL CLOSE EXECUTED - ", direction, " Position #", ticket);
+                Print("   💰 Closed Volume: ", DoubleToString(close_volume, 2), " lots");
+                Print("   📈 Close Price: ", DoubleToString(current_price, _Digits));
+                Print("   📊 Remaining: ", DoubleToString(volume - close_volume, 2), " lots");
+                Print("   🎯 Trigger: ", DoubleToString(trigger_pips, 0), " pips profit");
+            }
         }
     }
 }
@@ -1002,6 +1320,15 @@ void ExecuteEnhancedSellTrade(double bid,
 //+------------------------------------------------------------------+
 void ManageOpenPositions(SMarketConditions &conditions)
 {
+    static datetime last_status_time = 0;
+    
+    // Show position status every 30 seconds if we have positions
+    if (PositionsTotal() > 0 && TimeCurrent() - last_status_time >= 30)
+    {
+        ShowPositionsStatus();
+        last_status_time = TimeCurrent();
+    }
+    
     for (int i = PositionsTotal() - 1; i >= 0; i--)
     {
         string symbol = PositionGetSymbol(i);
@@ -1032,6 +1359,70 @@ void ManageOpenPositions(SMarketConditions &conditions)
             Trade.PositionClose(ticket);
         }
     }
+}
+
+//+------------------------------------------------------------------+
+//| Show Positions Status                                            |
+//+------------------------------------------------------------------+
+void ShowPositionsStatus()
+{
+    int total_positions = PositionsTotal();
+    int ea_positions = 0;
+    double total_profit = 0;
+    
+    Print("📊 ═══════ POSITIONS STATUS ═══════");
+    
+    for (int i = 0; i < total_positions; i++)
+    {
+        string symbol = PositionGetSymbol(i);
+        if (symbol == "")
+            continue;
+            
+        if (PositionGetInteger(POSITION_MAGIC) != MagicNumber)
+            continue;
+            
+        ea_positions++;
+        ulong ticket = PositionGetInteger(POSITION_TICKET);
+        ENUM_POSITION_TYPE pos_type = (ENUM_POSITION_TYPE)PositionGetInteger(POSITION_TYPE);
+        double volume = PositionGetDouble(POSITION_VOLUME);
+        double open_price = PositionGetDouble(POSITION_PRICE_OPEN);
+        double current_price = PositionGetDouble(POSITION_PRICE_CURRENT);
+        double sl = PositionGetDouble(POSITION_SL);
+        double tp = PositionGetDouble(POSITION_TP);
+        double profit = PositionGetDouble(POSITION_PROFIT);
+        double swap = PositionGetDouble(POSITION_SWAP);
+        datetime open_time = (datetime)PositionGetInteger(POSITION_TIME);
+        
+        total_profit += profit + swap;
+        
+        string direction = (pos_type == POSITION_TYPE_BUY) ? "BUY" : "SELL";
+        double pips_profit = 0;
+        
+        if (pos_type == POSITION_TYPE_BUY)
+            pips_profit = (current_price - open_price) / PointMultiplier;
+        else
+            pips_profit = (open_price - current_price) / PointMultiplier;
+            
+        Print("📈 Position #", ticket, " [", direction, "]");
+        Print("   💰 Volume: ", DoubleToString(volume, 2), " | Entry: ", DoubleToString(open_price, _Digits));
+        Print("   📊 Current: ", DoubleToString(current_price, _Digits), " | Pips: ", DoubleToString(pips_profit, 1));
+        Print("   🛑 SL: ", DoubleToString(sl, _Digits), " | 🎯 TP: ", DoubleToString(tp, _Digits));
+        Print("   💵 Profit: $", DoubleToString(profit, 2), " | Swap: $", DoubleToString(swap, 2));
+        Print("   ⏰ Open Time: ", TimeToString(open_time, TIME_DATE|TIME_MINUTES));
+    }
+    
+    if (ea_positions == 0)
+    {
+        Print("📊 No open positions for this EA (Magic: ", MagicNumber, ")");
+    }
+    else
+    {
+        Print("📊 Total EA Positions: ", ea_positions);
+        Print("💰 Total Profit: $", DoubleToString(total_profit, 2));
+        Print("💳 Account Balance: $", DoubleToString(AccountInfoDouble(ACCOUNT_BALANCE), 2));
+        Print("💎 Account Equity: $", DoubleToString(AccountInfoDouble(ACCOUNT_EQUITY), 2));
+    }
+    Print("═══════════════════════════════════");
 }
 
 //+------------------------------------------------------------------+
