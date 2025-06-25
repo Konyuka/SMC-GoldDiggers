@@ -811,7 +811,19 @@ double CalculateLotSize(double entry, double sl, double risk_percent)
     double max_lot = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_MAX);
 
     lot = MathMax(min_lot, MathMin(lot, max_lot));
-    lot = NormalizeDouble(lot, (int)SymbolInfoInteger(_Symbol, SYMBOL_VOLUME_STEP));
+    
+    // Get volume step as double and calculate decimal places
+    double volume_step = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_STEP);
+    int volume_digits = 2; // Default for most symbols
+    
+    if (volume_step == 0.01)
+        volume_digits = 2;
+    else if (volume_step == 0.1)
+        volume_digits = 1;
+    else if (volume_step == 1.0)
+        volume_digits = 0;
+    
+    lot = NormalizeDouble(lot, volume_digits);
     return lot;
 }
 
@@ -820,8 +832,31 @@ double CalculateLotSize(double entry, double sl, double risk_percent)
 //+------------------------------------------------------------------+
 void SetTrailingStop(ulong ticket, int trailing_pips)
 {
-    // Implement trailing stop logic here (monitor in OnTick)
-    // This is a placeholder for your trailing stop management
+    if (!PositionSelectByTicket(ticket))
+        return;
+
+    double trailing_distance = trailing_pips * PointMultiplier;
+    double current_price = PositionGetDouble(POSITION_PRICE_CURRENT);
+    double open_price = PositionGetDouble(POSITION_PRICE_OPEN);
+    double current_sl = PositionGetDouble(POSITION_SL);
+    ENUM_POSITION_TYPE pos_type = (ENUM_POSITION_TYPE)PositionGetInteger(POSITION_TYPE);
+
+    if (pos_type == POSITION_TYPE_BUY)
+    {
+        double new_sl = current_price - trailing_distance;
+        if (new_sl > current_sl && new_sl > open_price)
+        {
+            Trade.PositionModify(ticket, new_sl, PositionGetDouble(POSITION_TP));
+        }
+    }
+    else if (pos_type == POSITION_TYPE_SELL)
+    {
+        double new_sl = current_price + trailing_distance;
+        if (new_sl < current_sl && new_sl < open_price)
+        {
+            Trade.PositionModify(ticket, new_sl, PositionGetDouble(POSITION_TP));
+        }
+    }
 }
 
 //+------------------------------------------------------------------+
@@ -829,8 +864,31 @@ void SetTrailingStop(ulong ticket, int trailing_pips)
 //+------------------------------------------------------------------+
 void SetBreakeven(ulong ticket, int breakeven_pips)
 {
-    // Implement breakeven logic here (monitor in OnTick)
-    // This is a placeholder for your breakeven management
+    if (!PositionSelectByTicket(ticket))
+        return;
+
+    double breakeven_distance = breakeven_pips * PointMultiplier;
+    double current_price = PositionGetDouble(POSITION_PRICE_CURRENT);
+    double open_price = PositionGetDouble(POSITION_PRICE_OPEN);
+    double current_sl = PositionGetDouble(POSITION_SL);
+    ENUM_POSITION_TYPE pos_type = (ENUM_POSITION_TYPE)PositionGetInteger(POSITION_TYPE);
+
+    if (pos_type == POSITION_TYPE_BUY)
+    {
+        if (current_price >= open_price + breakeven_distance && current_sl < open_price)
+        {
+            Trade.PositionModify(ticket, open_price, PositionGetDouble(POSITION_TP));
+            Print("✅ Breakeven set for buy position: ", ticket);
+        }
+    }
+    else if (pos_type == POSITION_TYPE_SELL)
+    {
+        if (current_price <= open_price - breakeven_distance && current_sl > open_price)
+        {
+            Trade.PositionModify(ticket, open_price, PositionGetDouble(POSITION_TP));
+            Print("✅ Breakeven set for sell position: ", ticket);
+        }
+    }
 }
 
 //+------------------------------------------------------------------+
@@ -838,8 +896,356 @@ void SetBreakeven(ulong ticket, int breakeven_pips)
 //+------------------------------------------------------------------+
 void SetPartialClose(ulong ticket, int trigger_pips, double percent)
 {
-    // Implement partial close logic here (monitor in OnTick)
-    // This is a placeholder for your partial close management
+    if (!PositionSelectByTicket(ticket))
+        return;
+
+    double trigger_distance = trigger_pips * PointMultiplier;
+    double current_price = PositionGetDouble(POSITION_PRICE_CURRENT);
+    double open_price = PositionGetDouble(POSITION_PRICE_OPEN);
+    double volume = PositionGetDouble(POSITION_VOLUME);
+    ENUM_POSITION_TYPE pos_type = (ENUM_POSITION_TYPE)PositionGetInteger(POSITION_TYPE);
+
+    bool should_partial_close = false;
+
+    if (pos_type == POSITION_TYPE_BUY)
+    {
+        should_partial_close = (current_price >= open_price + trigger_distance);
+    }
+    else if (pos_type == POSITION_TYPE_SELL)
+    {
+        should_partial_close = (current_price <= open_price - trigger_distance);
+    }
+
+    if (should_partial_close)
+    {
+        double close_volume = NormalizeDouble(volume * (percent / 100.0), 2);
+        if (close_volume >= SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_MIN))
+        {
+            Trade.PositionClosePartial(ticket, close_volume);
+            Print("📊 Partial close executed: ", close_volume, " lots at ", current_price);
+        }
+    }
 }
 
-// ...existing code...
+//+------------------------------------------------------------------+
+//| Execute Enhanced Sell Trade                                      |
+//+------------------------------------------------------------------+
+void ExecuteEnhancedSellTrade(double bid,
+                              SMarketStructure &base_structure,
+                              SOrderBlocks &order_blocks,
+                              SFairValueGaps &fvgs,
+                              SLiquidityLevels &liquidity,
+                              ENUM_TRADE_TYPE setup,
+                              SMarketConditions &conditions)
+{
+    //--- Calculate stop loss and take profit
+    double sl = 0, tp = 0;
+    double entry = bid;
+
+    //--- Setup-specific SL/TP
+    if (setup == TRADE_ORDER_BLOCK && order_blocks.bearish_ob_high > 0)
+        sl = order_blocks.bearish_ob_high + (StopLossPips * PointMultiplier);
+    else if (setup == TRADE_FAIR_VALUE_GAP && fvgs.bearish_fvg_high > 0)
+        sl = fvgs.bearish_fvg_high + (StopLossPips * PointMultiplier);
+    else
+        sl = entry + (StopLossPips * PointMultiplier);
+
+    tp = entry - (TakeProfitPips * PointMultiplier);
+
+    //--- Calculate lot size based on risk
+    double lot = CalculateLotSize(entry, sl, RiskPerTradePercent);
+
+    //--- Check for minimum lot size
+    double min_lot = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_MIN);
+    if (lot < min_lot)
+        lot = min_lot;
+
+    //--- Place sell order
+    MqlTradeRequest request;
+    MqlTradeResult result;
+    ZeroMemory(request);
+    ZeroMemory(result);
+
+    request.action = TRADE_ACTION_DEAL;
+    request.symbol = _Symbol;
+    request.volume = lot;
+    request.type = ORDER_TYPE_SELL;
+    request.price = entry;
+    request.sl = NormalizeDouble(sl, _Digits);
+    request.tp = NormalizeDouble(tp, _Digits);
+    request.deviation = Slippage;
+    request.magic = MagicNumber;
+    request.comment = TradeComment;
+
+    if (OrderSend(request, result))
+    {
+        Print("✅ Sell order placed: ", "Entry=", entry, " SL=", sl, " TP=", tp, " Lot=", lot);
+
+        //--- Trade management
+        if (UseTrailingStop)
+            SetTrailingStop(result.order, TrailingStopPips);
+
+        if (UseBreakeven)
+            SetBreakeven(result.order, BreakevenPips);
+
+        if (EnablePartialClose)
+            SetPartialClose(result.order, PartialClosePips, PartialClosePercent);
+    }
+    else
+    {
+        Print("❌ Sell order failed: ", result.retcode, " ", result.comment);
+    }
+}
+
+//+------------------------------------------------------------------+
+//| Manage Open Positions                                            |
+//+------------------------------------------------------------------+
+void ManageOpenPositions(SMarketConditions &conditions)
+{
+    for (int i = PositionsTotal() - 1; i >= 0; i--)
+    {
+        string symbol = PositionGetSymbol(i);
+        if (symbol == "")
+            continue;
+
+        if (PositionGetInteger(POSITION_MAGIC) != MagicNumber)
+            continue;
+
+        ulong ticket = PositionGetInteger(POSITION_TICKET);
+
+        //--- Apply trailing stop
+        if (UseTrailingStop)
+            SetTrailingStop(ticket, TrailingStopPips);
+
+        //--- Apply breakeven
+        if (UseBreakeven)
+            SetBreakeven(ticket, BreakevenPips);
+
+        //--- Apply partial close
+        if (EnablePartialClose)
+            SetPartialClose(ticket, PartialClosePips, PartialClosePercent);
+
+        //--- Emergency close on high volatility
+        if (conditions.is_volatile && conditions.atr_percent > MaxATRPercent * 1.5)
+        {
+            Print("⚠️ Emergency close due to extreme volatility");
+            Trade.PositionClose(ticket);
+        }
+    }
+}
+
+//+------------------------------------------------------------------+
+//| Get Higher Timeframe Bias                                        |
+//+------------------------------------------------------------------+
+ENUM_MARKET_BIAS GetHigherTimeframeBias()
+{
+    SMarketStructure higher_structure = GetEnhancedMarketStructure(SMC_Higher_Handle);
+
+    if (higher_structure.bullish_bos || higher_structure.bullish_choch)
+        return BIAS_BULLISH;
+    else if (higher_structure.bearish_bos || higher_structure.bearish_choch)
+        return BIAS_BEARISH;
+    else
+        return BIAS_NEUTRAL;
+}
+
+//+------------------------------------------------------------------+
+//| Get Indicator Buffer Value                                        |
+//+------------------------------------------------------------------+
+double GetIndicatorBufferValue(int handle, int buffer_index, int shift)
+{
+    double value[];
+    if (CopyBuffer(handle, buffer_index, shift, 1, value) <= 0)
+        return 0.0;
+    return value[0];
+}
+
+//+------------------------------------------------------------------+
+//| Validate Signal                                                   |
+//+------------------------------------------------------------------+
+bool ValidateSignal(double signal_value)
+{
+    return (signal_value != EMPTY_VALUE && signal_value > 0);
+}
+
+//+------------------------------------------------------------------+
+//| Calculate Structure Strength                                      |
+//+------------------------------------------------------------------+
+int CalculateStructureStrength(SMarketStructure &structure)
+{
+    int strength = 0;
+
+    if (structure.bullish_bos || structure.bearish_bos)
+        strength += 2;
+    if (structure.bullish_choch || structure.bearish_choch)
+        strength += 3;
+
+    //--- Time-based strength
+    datetime current_time = TimeCurrent();
+    int time_diff_hours = (int)((current_time - structure.high_time) / 3600);
+
+    if (time_diff_hours <= 24)
+        strength += 1;
+    else if (time_diff_hours <= 72)
+        strength += 0;
+    else
+        strength -= 1;
+
+    return MathMax(1, MathMin(5, strength));
+}
+
+//+------------------------------------------------------------------+
+//| Validate Order Block                                             |
+//+------------------------------------------------------------------+
+bool ValidateOrderBlock(double high, double low, bool is_bullish)
+{
+    if (high <= low)
+        return false;
+
+    double current_price = SymbolInfoDouble(_Symbol, SYMBOL_BID);
+    double ob_size = (high - low) / PointMultiplier;
+
+    //--- Size validation
+    if (ob_size < MinOBSize)
+        return false;
+
+    //--- Age validation (not too old)
+    datetime current_time = TimeCurrent();
+    if ((current_time - LastOrderBlockTime) < 3600) // Within 1 hour
+        return false;
+
+    LastOrderBlockTime = current_time;
+    return true;
+}
+
+//+------------------------------------------------------------------+
+//| Validate FVG                                                     |
+//+------------------------------------------------------------------+
+bool ValidateFVG(double high, double low, bool is_bullish)
+{
+    if (high <= low)
+        return false;
+
+    double fvg_size = (high - low) / PointMultiplier;
+
+    //--- Minimum size validation
+    if (fvg_size < 50) // 5 pips minimum
+        return false;
+
+    //--- Age validation
+    datetime current_time = TimeCurrent();
+    if ((current_time - LastFVGTime) < 1800) // Within 30 minutes
+        return false;
+
+    LastFVGTime = current_time;
+    return true;
+}
+
+//+------------------------------------------------------------------+
+//| Validate Order Block Entry                                       |
+//+------------------------------------------------------------------+
+bool ValidateOrderBlockEntry(SOrderBlocks &ob, bool is_bullish, double price)
+{
+    if (is_bullish)
+    {
+        //--- Price should be in lower half of bullish OB for better entry
+        double ob_mid = (ob.bullish_ob_high + ob.bullish_ob_low) / 2;
+        return (price <= ob_mid);
+    }
+    else
+    {
+        //--- Price should be in upper half of bearish OB for better entry
+        double ob_mid = (ob.bearish_ob_high + ob.bearish_ob_low) / 2;
+        return (price >= ob_mid);
+    }
+}
+
+//+------------------------------------------------------------------+
+//| Count Positions by Magic Number                                  |
+//+------------------------------------------------------------------+
+int CountPositionsByMagic(int magic, ENUM_POSITION_TYPE type)
+{
+    int count = 0;
+    for (int i = 0; i < PositionsTotal(); i++)
+    {
+        string symbol = PositionGetSymbol(i);
+        if (symbol == "")
+            continue;
+            
+        if (PositionGetInteger(POSITION_MAGIC) == magic &&
+            PositionGetInteger(POSITION_TYPE) == type)
+            count++;
+    }
+    return count;
+}
+
+//+------------------------------------------------------------------+
+//| Apply Gold-Specific Settings                                     |
+//+------------------------------------------------------------------+
+void ApplyGoldSpecificSettings()
+{
+    //--- Gold-specific optimizations
+    if (_Symbol == "XAUUSD")
+    {
+        //--- Adjust point multiplier for 3-digit brokers
+        if (_Digits == 3)
+            PointMultiplier = 0.1;
+        else if (_Digits == 2)
+            PointMultiplier = 1.0;
+        else
+            PointMultiplier = 0.01;
+
+        Print("Gold-specific settings applied. Digits: ", _Digits, ", Point Multiplier: ", PointMultiplier);
+    }
+}
+
+//+------------------------------------------------------------------+
+//| High Impact News Time Check                                      |
+//+------------------------------------------------------------------+
+bool IsHighImpactNewsTime()
+{
+    //--- Placeholder for news filter
+    //--- Implement your news API integration here
+    //--- Return true if high impact news is expected within next 30 minutes
+
+    MqlDateTime dt;
+    TimeToStruct(TimeCurrent(), dt);
+
+    //--- Avoid trading during typical high-impact news times
+    //--- NFP (First Friday of month at 8:30 AM EST)
+    //--- FOMC meetings (usually Wednesday 2:00 PM EST)
+    //--- This is a simplified example
+
+    if (dt.day_of_week == 5 && dt.hour == 13 && dt.min >= 25 && dt.min <= 35) // NFP time
+        return true;
+
+    if (dt.day_of_week == 3 && dt.hour == 19 && dt.min >= 55) // FOMC time
+        return true;
+
+    return false;
+}
+
+//+------------------------------------------------------------------+
+//| OnTrade Event Handler                                            |
+//+------------------------------------------------------------------+
+void OnTrade()
+{
+    //--- Handle trade events
+    if (EnableAlerts)
+    {
+        Print("📊 Trade event detected at: ", TimeCurrent());
+    }
+}
+
+//+------------------------------------------------------------------+
+//| OnTimer Event Handler                                            |
+//+------------------------------------------------------------------+
+void OnTimer()
+{
+    //--- Periodic maintenance tasks
+    //--- Clean up old data, check for news, etc.
+}
+
+//+------------------------------------------------------------------+
+//| Expert Advisor End                                               |
+//+------------------------------------------------------------------+
