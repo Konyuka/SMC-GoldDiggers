@@ -10,11 +10,7 @@
 #property description "Implements advanced ICT/SMC strategies with multi-timeframe confirmation"
 
 //--- Includes
-#include <Trade/Trade.mqh>
-#include <Trade/PositionInfo.mqh>
-#include <Trade/HistoryOrderInfo.mqh>
-#include <Indicators/Indicator.mqh>
-#include <Math/Stat/Math.mqh>
+// Simplified MQL5 trading classes for compatibility
 
 //--- Input Parameters
 input group "═════════ STRATEGY SETTINGS ═════════" input ENUM_TIMEFRAMES BaseTimeframe = PERIOD_H4; // Base timeframe (market structure)
@@ -58,7 +54,65 @@ input bool EnablePartialClose = true;                                           
 input double PartialClosePercent = 50.0;                                              // Partial close percentage
 input int PartialClosePips = 300;                                                     // Partial close trigger (pips)
 
-input group "═════════ MANUAL TESTING ═════════" input bool EnableManualTesting = true; // Enable manual trade triggers
+input group "═════════ ADVANCED STRATEGIES ═════════"
+input bool UseMultiStrategy = true;                                                    // Enable multi-strategy approach
+input bool UseScalpingMode = true;                                                     // Enable scalping on M5/M15
+input bool UseSwingTrading = true;                                                     // Enable swing trading on H4/D1
+input bool UseMomentumStrategy = true;                                                 // Enable momentum-based entries
+input bool UseReversalStrategy = true;                                                 // Enable reversal strategy
+input bool UseTrendFollowing = true;                                                   // Enable trend following strategy
+input bool UseNewsTrading = false;                                                     // Enable news spike trading (disabled by default)
+input double ScalpingRiskPercent = 0.3;                                               // Risk per scalping trade
+input double SwingRiskPercent = 0.8;                                                  // Risk per swing trade
+
+input group "═════════ ENHANCED INDICATORS ═════════"
+input bool UseEMA = true;                                                              // Use Exponential Moving Averages
+input int EMA_Fast = 8;                                                                // Fast EMA period
+input int EMA_Slow = 21;                                                               // Slow EMA period
+input int EMA_Trend = 50;                                                              // Trend EMA period
+input bool UseBBands = true;                                                           // Use Bollinger Bands
+input int BB_Period = 20;                                                              // Bollinger Bands period
+input double BB_Deviation = 2.0;                                                       // Bollinger Bands deviation
+input bool UseStoch = true;                                                            // Use Stochastic
+input int Stoch_K = 5;                                                                 // Stochastic %K period
+input int Stoch_D = 3;                                                                 // Stochastic %D period
+input int Stoch_Slowing = 3;                                                           // Stochastic slowing
+input bool UseMACD = true;                                                             // Use MACD
+input int MACD_Fast = 12;                                                              // MACD fast EMA
+input int MACD_Slow = 26;                                                              // MACD slow EMA
+input int MACD_Signal = 9;                                                             // MACD signal line
+input bool UseZigZag = true;                                                           // Use ZigZag for swing points
+input int ZigZag_Depth = 12;                                                           // ZigZag depth
+input int ZigZag_Deviation = 5;                                                        // ZigZag deviation
+input int ZigZag_Backstep = 3;                                                         // ZigZag backstep
+
+input group "═════════ PRICE ACTION & PATTERNS ═════════"
+input bool UseCandlestickPatterns = true;                                              // Use candlestick patterns
+input bool UseSupplyDemand = true;                                                     // Use supply/demand zones
+input bool UseFibonacci = true;                                                        // Use Fibonacci retracements
+input bool UseVolumeAnalysis = false;                                                  // Use volume analysis (if available)
+input bool UseDivergence = true;                                                       // Use RSI/MACD divergence
+input int PatternLookback = 10;                                                        // Candlestick pattern lookback
+input double FibLevel1 = 0.382;                                                        // Fibonacci level 1
+input double FibLevel2 = 0.618;                                                        // Fibonacci level 2
+input double FibLevel3 = 0.786;                                                        // Fibonacci level 3
+
+input group "═════════ MARKET CONDITIONS ═════════"
+input bool UseMarketSentiment = true;                                                  // Use market sentiment analysis
+input bool UseCorrelationAnalysis = true;                                              // Use correlation with DXY, yields
+input bool UseSeasonality = true;                                                      // Use seasonal patterns
+input bool UseAsianKillZone = true;                                                    // Trade Asian session kill zone
+input bool UseLondonKillZone = true;                                                   // Trade London session kill zone
+input bool UseNewYorkKillZone = true;                                                  // Trade New York session kill zone
+input int AsianStartHour = 0;                                                          // Asian kill zone start
+input int AsianEndHour = 3;                                                            // Asian kill zone end
+input int LondonKillStart = 7;                                                         // London kill zone start
+input int LondonKillEnd = 10;                                                          // London kill zone end
+input int NYKillStart = 13;                                                            // NY kill zone start
+input int NYKillEnd = 16;                                                              // NY kill zone end
+
+input group "═════════ MANUAL TESTING ═════════" 
+input bool EnableManualTesting = true; // Enable manual trade triggers
 input bool TriggerBuyTrade = false;                                                    // Trigger a BUY trade now
 input bool TriggerSellTrade = false;                                                   // Trigger a SELL trade now
 input bool CloseAllTrades = false;                                                     // Close all open trades
@@ -67,17 +121,144 @@ input bool ForceInstantTrade = false;                                           
 input bool EnableBacktestMode = true;                                                  // Enable aggressive testing for backtesting
 input bool AggressiveSMCMode = true;                                                   // Enable aggressive SMC signal detection for more trades
 
-//--- Global Variables
-CTrade Trade;
-CPositionInfo PositionInfo;
-CHistoryOrderInfo HistoryInfo;
+//--- Enhanced Global Variables
+// Simplified trading objects
+struct CTrade_Simple
+{
+    ulong magic_number;
+    uint deviation;
+    ENUM_ORDER_TYPE_FILLING filling_type;
+    bool async_mode;
+    
+    void SetExpertMagicNumber(ulong magic) { magic_number = magic; }
+    void SetDeviationInPoints(uint dev) { deviation = dev; }
+    void SetTypeFilling(ENUM_ORDER_TYPE_FILLING fill) { filling_type = fill; }
+    void SetAsyncMode(bool async) { async_mode = async; }
+    
+    bool Buy(double volume, string symbol, double price, double sl, double tp, string comment)
+    {
+        MqlTradeRequest request;
+        MqlTradeResult result;
+        ZeroMemory(request);
+        ZeroMemory(result);
+        
+        request.action = TRADE_ACTION_DEAL;
+        request.symbol = symbol;
+        request.volume = volume;
+        request.type = ORDER_TYPE_BUY;
+        request.price = price;
+        request.sl = sl;
+        request.tp = tp;
+        request.deviation = deviation;
+        request.magic = magic_number;
+        request.comment = comment;
+        request.type_filling = filling_type;
+        
+        return OrderSend(request, result);
+    }
+    
+    bool Sell(double volume, string symbol, double price, double sl, double tp, string comment)
+    {
+        MqlTradeRequest request;
+        MqlTradeResult result;
+        ZeroMemory(request);
+        ZeroMemory(result);
+        
+        request.action = TRADE_ACTION_DEAL;
+        request.symbol = symbol;
+        request.volume = volume;
+        request.type = ORDER_TYPE_SELL;
+        request.price = price;
+        request.sl = sl;
+        request.tp = tp;
+        request.deviation = deviation;
+        request.magic = magic_number;
+        request.comment = comment;
+        request.type_filling = filling_type;
+        
+        return OrderSend(request, result);
+    }
+    
+    bool PositionClose(ulong ticket)
+    {
+        if (!PositionSelectByTicket(ticket))
+            return false;
+            
+        MqlTradeRequest request;
+        MqlTradeResult result;
+        ZeroMemory(request);
+        ZeroMemory(result);
+        
+        request.action = TRADE_ACTION_DEAL;
+        request.symbol = PositionGetString(POSITION_SYMBOL);
+        request.volume = PositionGetDouble(POSITION_VOLUME);
+        request.type = (PositionGetInteger(POSITION_TYPE) == POSITION_TYPE_BUY) ? ORDER_TYPE_SELL : ORDER_TYPE_BUY;
+        request.price = (PositionGetInteger(POSITION_TYPE) == POSITION_TYPE_BUY) ? 
+                       SymbolInfoDouble(request.symbol, SYMBOL_BID) : 
+                       SymbolInfoDouble(request.symbol, SYMBOL_ASK);
+        request.deviation = deviation;
+        request.magic = magic_number;
+        request.position = ticket;
+        
+        return OrderSend(request, result);
+    }
+    
+    bool PositionModify(ulong ticket, double sl, double tp)
+    {
+        if (!PositionSelectByTicket(ticket))
+            return false;
+            
+        MqlTradeRequest request;
+        MqlTradeResult result;
+        ZeroMemory(request);
+        ZeroMemory(result);
+        
+        request.action = TRADE_ACTION_SLTP;
+        request.symbol = PositionGetString(POSITION_SYMBOL);
+        request.sl = sl;
+        request.tp = tp;
+        request.position = ticket;
+        
+        return OrderSend(request, result);
+    }
+    
+    bool PositionClosePartial(ulong ticket, double volume)
+    {
+        if (!PositionSelectByTicket(ticket))
+            return false;
+            
+        MqlTradeRequest request;
+        MqlTradeResult result;
+        ZeroMemory(request);
+        ZeroMemory(result);
+        
+        request.action = TRADE_ACTION_DEAL;
+        request.symbol = PositionGetString(POSITION_SYMBOL);
+        request.volume = volume;
+        request.type = (PositionGetInteger(POSITION_TYPE) == POSITION_TYPE_BUY) ? ORDER_TYPE_SELL : ORDER_TYPE_BUY;
+        request.price = (PositionGetInteger(POSITION_TYPE) == POSITION_TYPE_BUY) ? 
+                       SymbolInfoDouble(request.symbol, SYMBOL_BID) : 
+                       SymbolInfoDouble(request.symbol, SYMBOL_ASK);
+        request.deviation = deviation;
+        request.magic = magic_number;
+        request.position = ticket;
+        
+        return OrderSend(request, result);
+    }
+};
+
+CTrade_Simple Trade;
 
 double PointMultiplier;
 int SMC_Base_Handle, SMC_Confirm_Handle, SMC_Higher_Handle;
 int ATR_Handle, RSI_Handle;
+int EMA_Fast_Handle, EMA_Slow_Handle, EMA_Trend_Handle;
+int BB_Handle, Stoch_Handle, MACD_Handle, ZigZag_Handle;
 datetime LastTradeTime;
 datetime LastOrderBlockTime;
 datetime LastFVGTime;
+datetime LastScalpTime;
+datetime LastSwingTime;
 
 //--- Enhanced SMC Buffer Mapping
 enum ENUM_SMC_BUFFERS
@@ -113,7 +294,119 @@ enum ENUM_TRADE_TYPE
     TRADE_ORDER_BLOCK,
     TRADE_FAIR_VALUE_GAP,
     TRADE_LIQUIDITY_GRAB,
+    TRADE_SCALPING,
+    TRADE_SWING,
+    TRADE_MOMENTUM,
+    TRADE_REVERSAL,
+    TRADE_TREND_FOLLOW,
+    TRADE_BREAKOUT,
+    TRADE_FIBONACCI,
+    TRADE_DIVERGENCE,
     TRADE_NONE
+};
+
+enum ENUM_STRATEGY_TYPE
+{
+    STRATEGY_SMC,
+    STRATEGY_SCALPING,
+    STRATEGY_SWING,
+    STRATEGY_MOMENTUM,
+    STRATEGY_REVERSAL,
+    STRATEGY_TREND_FOLLOWING,
+    STRATEGY_BREAKOUT,
+    STRATEGY_NEWS
+};
+
+enum ENUM_MARKET_SESSION
+{
+    SESSION_ASIAN,
+    SESSION_LONDON,
+    SESSION_NEW_YORK,
+    SESSION_OVERLAP,
+    SESSION_INACTIVE
+};
+
+struct SAdvancedIndicators
+{
+    double ema_fast;
+    double ema_slow;
+    double ema_trend;
+    double bb_upper;
+    double bb_middle;
+    double bb_lower;
+    double stoch_main;
+    double stoch_signal;
+    double macd_main;
+    double macd_signal;
+    double macd_histogram;
+    bool bb_squeeze;
+    bool ema_bullish_cross;
+    bool ema_bearish_cross;
+    bool stoch_oversold;
+    bool stoch_overbought;
+    bool macd_bullish_cross;
+    bool macd_bearish_cross;
+};
+
+struct SMarketEnvironment
+{
+    ENUM_MARKET_SESSION current_session;
+    bool is_kill_zone;
+    bool is_london_breakout;
+    bool is_ny_session;
+    bool is_high_volatility_time;
+    double daily_range_percent;
+    double session_high;
+    double session_low;
+    int trend_strength; // 1-10
+    bool is_trending_market;
+    bool is_ranging_market;
+};
+
+struct SPriceAction
+{
+    bool hammer;
+    bool doji;
+    bool engulfing_bull;
+    bool engulfing_bear;
+    bool pin_bar_bull;
+    bool pin_bar_bear;
+    bool inside_bar;
+    bool outside_bar;
+    double swing_high;
+    double swing_low;
+    bool higher_high;
+    bool higher_low;
+    bool lower_high;
+    bool lower_low;
+};
+
+struct SFibonacciLevels
+{
+    double fib_0;
+    double fib_236;
+    double fib_382;
+    double fib_500;
+    double fib_618;
+    double fib_786;
+    double fib_100;
+    bool price_at_fib_level;
+    double nearest_fib_level;
+    double fib_extension_127;
+    double fib_extension_162;
+};
+
+struct SSupplyDemand
+{
+    double supply_zone_high;
+    double supply_zone_low;
+    double demand_zone_high;
+    double demand_zone_low;
+    bool fresh_supply;
+    bool fresh_demand;
+    bool price_in_supply;
+    bool price_in_demand;
+    int zone_strength; // 1-5
 };
 
 struct SMarketStructure
@@ -200,14 +493,47 @@ int OnInit()
     ATR_Handle = iATR(_Symbol, PERIOD_H1, 14);
     RSI_Handle = iRSI(_Symbol, PERIOD_H1, 14, PRICE_CLOSE);
 
+    //--- Create enhanced indicator handles
+    if (UseEMA)
+    {
+        EMA_Fast_Handle = iMA(_Symbol, PERIOD_CURRENT, EMA_Fast, 0, MODE_EMA, PRICE_CLOSE);
+        EMA_Slow_Handle = iMA(_Symbol, PERIOD_CURRENT, EMA_Slow, 0, MODE_EMA, PRICE_CLOSE);
+        EMA_Trend_Handle = iMA(_Symbol, PERIOD_CURRENT, EMA_Trend, 0, MODE_EMA, PRICE_CLOSE);
+    }
+
+    if (UseBBands)
+        BB_Handle = iBands(_Symbol, PERIOD_CURRENT, BB_Period, 0, BB_Deviation, PRICE_CLOSE);
+
+    if (UseStoch)
+        Stoch_Handle = iStochastic(_Symbol, PERIOD_CURRENT, Stoch_K, Stoch_D, Stoch_Slowing, MODE_SMA, STO_LOWHIGH);
+
+    if (UseMACD)
+        MACD_Handle = iMACD(_Symbol, PERIOD_CURRENT, MACD_Fast, MACD_Slow, MACD_Signal, PRICE_CLOSE);
+
+    if (UseZigZag)
+        ZigZag_Handle = iCustom(_Symbol, PERIOD_CURRENT, "ZigZag", ZigZag_Depth, ZigZag_Deviation, ZigZag_Backstep);
+
     //--- Validate handles
     if (SMC_Base_Handle == INVALID_HANDLE || SMC_Confirm_Handle == INVALID_HANDLE ||
         SMC_Higher_Handle == INVALID_HANDLE || ATR_Handle == INVALID_HANDLE ||
         RSI_Handle == INVALID_HANDLE)
     {
-        Print("❌ Error creating indicator handles!");
+        Print("❌ Error creating core indicator handles!");
         return INIT_FAILED;
     }
+
+    //--- Validate enhanced indicators
+    if (UseEMA && (EMA_Fast_Handle == INVALID_HANDLE || EMA_Slow_Handle == INVALID_HANDLE || EMA_Trend_Handle == INVALID_HANDLE))
+        Print("⚠️ Warning: EMA indicators failed to load");
+    
+    if (UseBBands && BB_Handle == INVALID_HANDLE)
+        Print("⚠️ Warning: Bollinger Bands failed to load");
+    
+    if (UseStoch && Stoch_Handle == INVALID_HANDLE)
+        Print("⚠️ Warning: Stochastic failed to load");
+    
+    if (UseMACD && MACD_Handle == INVALID_HANDLE)
+        Print("⚠️ Warning: MACD failed to load");
 
     //--- Apply Gold-specific settings
     ApplyGoldSpecificSettings();
@@ -958,6 +1284,60 @@ ENUM_TRADE_TYPE AnalyzeBuyOpportunity(ENUM_MARKET_BIAS bias, SMarketStructure &b
         }
     }
 
+    //--- ENHANCED MULTI-STRATEGY APPROACH
+    if (UseMultiStrategy)
+    {
+        // Get current time for session analysis
+        MqlDateTime dt;
+        TimeToStruct(TimeCurrent(), dt);
+        int hour = dt.hour;
+        bool is_kill_zone = (hour >= 7 && hour <= 10) || (hour >= 13 && hour <= 16);
+        
+        // SCALPING STRATEGY during kill zones
+        if (UseScalpingMode && is_kill_zone)
+        {
+            if (conditions.rsi_value < 35 && conditions.rsi_value > 25)
+            {
+                Print("⚡ SCALPING BUY: RSI oversold in kill zone (", hour, ":00)!");
+                return TRADE_SCALPING;
+            }
+            
+            if (conditions.atr_percent < 0.4 && conditions.current_spread < 20)
+            {
+                Print("⚡ SCALPING BUY: Low volatility breakout!");
+                return TRADE_SCALPING;
+            }
+        }
+        
+        // MOMENTUM STRATEGY
+        if (UseMomentumStrategy && conditions.rsi_value > 55 && conditions.rsi_value < 75)
+        {
+            Print("🚀 MOMENTUM BUY: Strong upward momentum!");
+            return TRADE_MOMENTUM;
+        }
+        
+        // REVERSAL STRATEGY
+        if (UseReversalStrategy && conditions.rsi_value < 25)
+        {
+            Print("🔄 REVERSAL BUY: Extreme oversold reversal!");
+            return TRADE_REVERSAL;
+        }
+        
+        // SWING TRADING STRATEGY
+        if (UseSwingTrading && base.bullish_choch && conditions.rsi_value < 60)
+        {
+            Print("📈 SWING BUY: Higher timeframe bullish structure!");
+            return TRADE_SWING;
+        }
+        
+        // TREND FOLLOWING STRATEGY
+        if (UseTrendFollowing && conditions.rsi_value > 50 && conditions.rsi_value < 70)
+        {
+            Print("📈 TREND FOLLOW BUY: Following strong trend!");
+            return TRADE_TREND_FOLLOW;
+        }
+    }
+
     //--- SMC MAIN STRATEGY: Enhanced SMC Signal Detection
     
     // AGGRESSIVE SMC MODE: Loosen all conditions for maximum trades
@@ -1113,6 +1493,60 @@ ENUM_TRADE_TYPE AnalyzeSellOpportunity(ENUM_MARKET_BIAS bias, SMarketStructure &
         }
     }
 
+    //--- ENHANCED MULTI-STRATEGY APPROACH
+    if (UseMultiStrategy)
+    {
+        // Get current time for session analysis
+        MqlDateTime dt;
+        TimeToStruct(TimeCurrent(), dt);
+        int hour = dt.hour;
+        bool is_kill_zone = (hour >= 7 && hour <= 10) || (hour >= 13 && hour <= 16);
+        
+        // SCALPING STRATEGY during kill zones
+        if (UseScalpingMode && is_kill_zone)
+        {
+            if (conditions.rsi_value > 65 && conditions.rsi_value < 75)
+            {
+                Print("⚡ SCALPING SELL: RSI overbought in kill zone (", hour, ":00)!");
+                return TRADE_SCALPING;
+            }
+            
+            if (conditions.atr_percent < 0.4 && conditions.current_spread < 20)
+            {
+                Print("⚡ SCALPING SELL: Low volatility breakout!");
+                return TRADE_SCALPING;
+            }
+        }
+        
+        // MOMENTUM STRATEGY
+        if (UseMomentumStrategy && conditions.rsi_value < 45 && conditions.rsi_value > 25)
+        {
+            Print("🚀 MOMENTUM SELL: Strong downward momentum!");
+            return TRADE_MOMENTUM;
+        }
+        
+        // REVERSAL STRATEGY
+        if (UseReversalStrategy && conditions.rsi_value > 75)
+        {
+            Print("🔄 REVERSAL SELL: Extreme overbought reversal!");
+            return TRADE_REVERSAL;
+        }
+        
+        // SWING TRADING STRATEGY
+        if (UseSwingTrading && base.bearish_choch && conditions.rsi_value > 40)
+        {
+            Print("📉 SWING SELL: Higher timeframe bearish structure!");
+            return TRADE_SWING;
+        }
+        
+        // TREND FOLLOWING STRATEGY
+        if (UseTrendFollowing && conditions.rsi_value < 50 && conditions.rsi_value > 30)
+        {
+            Print("📉 TREND FOLLOW SELL: Following strong downtrend!");
+            return TRADE_TREND_FOLLOW;
+        }
+    }
+
     //--- SMC MAIN STRATEGY: Enhanced SMC Signal Detection
     
     // AGGRESSIVE SMC MODE: Loosen all conditions for maximum trades
@@ -1257,22 +1691,72 @@ void ExecuteEnhancedBuyTrade(double ask,
                              ENUM_TRADE_TYPE setup,
                              SMarketConditions &conditions)
 {
+    //--- Strategy-specific risk management and SL/TP
+    double risk_percent = RiskPerTradePercent;
+    int sl_pips = StopLossPips;
+    int tp_pips = TakeProfitPips;
+    string strategy_comment = TradeComment;
+    
+    // Adjust parameters based on strategy type
+    if (setup == TRADE_SCALPING)
+    {
+        risk_percent = ScalpingRiskPercent;
+        sl_pips = 150; // Tighter SL for scalping
+        tp_pips = 300; // Smaller TP for quick profits
+        strategy_comment += "-SCALP";
+    }
+    else if (setup == TRADE_SWING)
+    {
+        risk_percent = SwingRiskPercent;
+        sl_pips = 400; // Wider SL for swing trades
+        tp_pips = 1200; // Larger TP for swing trades
+        strategy_comment += "-SWING";
+    }
+    else if (setup == TRADE_MOMENTUM)
+    {
+        sl_pips = 200; // Medium SL for momentum
+        tp_pips = 800; // Good TP for momentum
+        strategy_comment += "-MOMENTUM";
+    }
+    else if (setup == TRADE_REVERSAL)
+    {
+        sl_pips = 180; // Tight SL for reversals
+        tp_pips = 600; // Medium TP for reversals
+        strategy_comment += "-REVERSAL";
+    }
+    else if (setup == TRADE_TREND_FOLLOW)
+    {
+        sl_pips = 300; // Medium SL for trend following
+        tp_pips = 900; // Good TP for trend following
+        strategy_comment += "-TREND";
+    }
+    else if (setup == TRADE_FIBONACCI)
+    {
+        sl_pips = 200; // Medium SL for Fibonacci
+        tp_pips = 800; // Good TP for Fibonacci
+        strategy_comment += "-FIB";
+    }
+    else
+    {
+        strategy_comment += "-SMC";
+    }
+
     //--- Calculate stop loss and take profit
     double sl = 0, tp = 0;
     double entry = ask;
 
-    //--- Default SL/TP (can be enhanced per setup)
+    //--- Strategy-specific SL/TP calculation
     if (setup == TRADE_ORDER_BLOCK && order_blocks.bullish_ob_low > 0)
-        sl = order_blocks.bullish_ob_low - (StopLossPips * PointMultiplier);
+        sl = order_blocks.bullish_ob_low - (sl_pips * PointMultiplier);
     else if (setup == TRADE_FAIR_VALUE_GAP && fvgs.bullish_fvg_low > 0)
-        sl = fvgs.bullish_fvg_low - (StopLossPips * PointMultiplier);
+        sl = fvgs.bullish_fvg_low - (sl_pips * PointMultiplier);
     else
-        sl = entry - (StopLossPips * PointMultiplier);
+        sl = entry - (sl_pips * PointMultiplier);
 
-    tp = entry + (TakeProfitPips * PointMultiplier);
+    tp = entry + (tp_pips * PointMultiplier);
 
-    //--- Calculate lot size based on risk
-    double lot = CalculateLotSize(entry, sl, RiskPerTradePercent);
+    //--- Calculate lot size based on strategy risk
+    double lot = CalculateLotSize(entry, sl, risk_percent);
 
     //--- Check for minimum lot size
     double min_lot = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_MIN);
@@ -1294,11 +1778,17 @@ void ExecuteEnhancedBuyTrade(double ask,
     request.tp = NormalizeDouble(tp, _Digits);
     request.deviation = Slippage;
     request.magic = MagicNumber;
-    request.comment = TradeComment;
+    request.comment = strategy_comment;
 
     if (OrderSend(request, result))
     {
-        Print("✅ Buy order placed: ", "Entry=", entry, " SL=", sl, " TP=", tp, " Lot=", lot);
+        Print("✅ ", strategy_comment, " BUY order placed:");
+        Print("   📊 Strategy: ", EnumToString(setup));
+        Print("   💰 Entry: ", DoubleToString(entry, _Digits));
+        Print("   🛑 SL: ", DoubleToString(sl, _Digits), " (", DoubleToString(sl_pips, 0), " pips)");
+        Print("   🎯 TP: ", DoubleToString(tp, _Digits), " (", DoubleToString(tp_pips, 0), " pips)");
+        Print("   📈 Lot: ", DoubleToString(lot, 2));
+        Print("   📊 Risk: ", DoubleToString(risk_percent, 1), "%");
 
         //--- Trailing stop
         if (UseTrailingStop)
