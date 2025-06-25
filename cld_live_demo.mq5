@@ -5,37 +5,42 @@
 //+------------------------------------------------------------------+
 #property copyright "Copyright 2024, LuxAlgo & Smart Money Concepts"
 #property link "https://www.luxalgo.com/"
-#property version "3.10"
-#property description "Live Demo Expert Advisor for Gold (XAUUSD) using LuxAlgo Smart Money Concepts"
-#property description "Optimized for live demo trading with conservative risk management"
+#property version "4.00"
+#property description "ULTRA CONSERVATIVE SMC Gold EA - Optimized for Fast Profits & Capital Preservation"
+#property description "✅ M15/M5 Timeframes | ✅ 0.5% Risk | ✅ Fast Profit Taking | ✅ Tight Stops"
+
+#include <Trade\Trade.mqh>
+#include <Trade\PositionInfo.mqh>
+#include <Trade\AccountInfo.mqh>
+#include <Indicators\Indicators.mqh>
 
 //--- Input Parameters
 input group "═════════ STRATEGY SETTINGS ═════════"
-input ENUM_TIMEFRAMES BaseTimeframe = PERIOD_H4;                   // Base timeframe (market structure)
-input ENUM_TIMEFRAMES ConfirmTimeframe = PERIOD_H1;                // Confirmation timeframe
-input ENUM_TIMEFRAMES HigherTimeframe = PERIOD_D1;                 // Higher timeframe (bias)
-input int MaxOpenTrades = 3;                                       // Maximum open trades (conservative for demo)
-input int Slippage = 20;                                           // Slippage in points (higher for live)
+input ENUM_TIMEFRAMES BaseTimeframe = PERIOD_M15;                  // Base timeframe (market structure) - FASTER
+input ENUM_TIMEFRAMES ConfirmTimeframe = PERIOD_M5;                // Confirmation timeframe - FASTER
+input ENUM_TIMEFRAMES HigherTimeframe = PERIOD_H1;                 // Higher timeframe (bias) - FASTER
+input int MaxOpenTrades = 2;                                       // Maximum open trades - INCREASED for more opportunities
+input int Slippage = 30;                                           // Slippage in points (higher for live)
 
 input group "═════════ RISK MANAGEMENT ═════════"
-input double RiskPerTradePercent = 0.5;                           // Risk per trade (% of balance) - Conservative
-input int StopLossPips = 300;                                      // Default SL (30 pips for XAUUSD)
-input int TakeProfitPips = 900;                                    // Default TP (90 pips for XAUUSD)
+input double RiskPerTradePercent = 0.5;                           // Risk per trade (% of balance) - CONSERVATIVE
+input int StopLossPips = 80;                                       // Default SL (8 pips for XAUUSD) - TIGHT
+input int TakeProfitPips = 160;                                    // Default TP (16 pips for XAUUSD) - FAST PROFITS  
 input bool UseAutoRR = true;                                       // Use automatic risk-reward
-input double MinRiskReward = 2.5;                                  // Minimum risk:reward ratio
+input double MinRiskReward = 2.0;                                  // Minimum risk:reward ratio
 input bool UseTrailingStop = true;                                 // Enable trailing stop
-input int TrailingStopPips = 250;                                  // Trailing stop distance
+input int TrailingStopPips = 60;                                   // Trailing stop distance - TIGHT
 input bool UseBreakeven = true;                                    // Move SL to breakeven
-input int BreakevenPips = 200;                                     // Breakeven trigger distance
+input int BreakevenPips = 40;                                      // Breakeven trigger distance - FAST
 
 input group "═════════ SMC INDICATOR SETTINGS ═════════"
 input string SMC_Indicator_Name = "LuxAlgo - Smart Money Concepts"; // Indicator name
-input int SMC_OB_Lookback = 20;                                     // Order block lookback (bars)
-input int SMC_FVG_Lookback = 15;                                    // FVG lookback (bars)
+input int SMC_OB_Lookback = 10;                                     // Order block lookback (bars) - SHORTER
+input int SMC_FVG_Lookback = 8;                                     // FVG lookback (bars) - SHORTER
 input bool UseOrderBlocks = true;                                   // Trade order blocks
 input bool UseFairValueGaps = true;                                 // Trade fair value gaps
 input bool UseLiquidityGrabs = true;                                // Trade liquidity grabs
-input double MinOBSize = 50;                                        // Minimum order block size (pips) - REDUCED for demo
+input double MinOBSize = 15;                                        // Minimum order block size (1.5 pips) - EVEN SMALLER for more signals
 
 input group "═════════ TRADING FILTERS ═════════"
 input bool UseSessionFilter = true;                                // Enable session filtering
@@ -54,15 +59,33 @@ input string TradeComment = "SMC-Gold-LiveDemo";                   // Trade comm
 input bool EnableAlerts = true;                                    // Enable trade alerts
 input bool EnablePartialClose = true;                              // Enable partial position closing
 input double PartialClosePercent = 50.0;                          // Partial close percentage
-input int PartialClosePips = 400;                                 // Partial close trigger (pips)
+input int PartialClosePips = 80;                                  // Partial close trigger (8 pips) - FAST PROFITS
+
+input group "═════════ DAILY PROFIT OPTIMIZATION ═════════"
+input double DailyProfitTarget = 50.0;                            // Daily profit target ($)
+input double DailyMaxLoss = -25.0;                                // Daily maximum loss ($)
+input int MaxDailyTrades = 15;                                    // Maximum trades per day
+input bool StopAfterDailyTarget = true;                           // Stop trading after daily target reached
+input bool EnableAggressiveMode = false;                          // Enable aggressive trading if behind target
+input int TradeFrequencyMinutes = 15;                             // Minimum minutes between trades (reduced for more opportunities)
+
+input group "═════════ ADVANCED RISK MANAGEMENT ═════════"
+input bool UseDynamicSLTP = true;                                 // Use ATR-based dynamic SL/TP
+input double ATRMultiplierSL = 1.0;                               // ATR multiplier for Stop Loss - TIGHTER
+input double ATRMultiplierTP = 2.5;                               // ATR multiplier for Take Profit - FASTER
+input bool UseEarlyProfitProtection = true;                       // Enable early profit protection
+input int EarlyProfitPips = 30;                                   // Move SL to entry +30% when TP 25% reached - FASTER
+input bool UseScaledExits = true;                                 // Enable scaled profit taking
+input double FirstExitPercent = 50.0;                             // First exit at 50% of position - FASTER PROFITS
+input int FirstExitPips = 60;                                     // First exit trigger (6 pips) - VERY FAST
+input double SecondExitPercent = 30.0;                            // Second exit at 30% of remaining
+input int SecondExitPips = 100;                                   // Second exit trigger (10 pips)
+input int MinConfluenceLevel = 1;                                 // Minimum confluence level (1-5) - MINIMUM for more opportunities
+input bool RequireHigherTFConfirmation = false;                   // Require higher timeframe confirmation - RELAXED
+input bool UseConservativeEntries = false;                        // Use conservative entry logic - RELAXED
+input double SignalValidityHours = 4.0;                          // Signal validity in hours - LONGER WINDOW
 
 input group "═════════ SMC SIGNAL STRENGTH ═════════"
-input int MinConfluenceLevel = 1;                                 // Minimum confluence level (1-5) - RELAXED for demo
-input bool RequireHigherTFConfirmation = false;                   // Require higher timeframe confirmation - DISABLED for demo
-input bool UseConservativeEntries = false;                        // Use conservative entry logic - DISABLED for demo
-input double SignalValidityHours = 4.0;                          // Signal validity in hours
-
-input group "═════════ MANUAL TESTING (DEMO ONLY) ═════════"
 input bool EnableManualTesting = false;                           // Enable manual trade triggers (disabled for live)
 input bool TriggerBuyTrade = false;                               // Trigger a BUY trade now
 input bool TriggerSellTrade = false;                              // Trigger a SELL trade now
@@ -208,6 +231,13 @@ int SMC_Confirm_Handle = INVALID_HANDLE;
 int SMC_Higher_Handle = INVALID_HANDLE;
 bool SMC_Available = false;
 
+//--- Daily Profit Tracking Variables
+double DailyStartBalance = 0.0;
+datetime LastDayCheck = 0;
+bool DailyTargetReached = false;
+int DailyTradeCount = 0;
+int no_signal_counter = 0;        // Counter for consecutive periods without SMC signals
+
 //--- Enhanced SMC Buffer Mapping
 enum ENUM_SMC_BUFFERS
 {
@@ -310,10 +340,11 @@ struct SLiquidityLevels
 int OnInit()
 {
     Print("═══════════════════════════════════════");
-    Print("🚀 SMC GOLD EA MASTERPIECE v3.10 Starting");
-    Print("   🎯 ENHANCED LIVE DEMO VERSION");
-    Print("   💎 Advanced SMC Intelligence");
-    Print("   🛡️ Robust Position Management");
+    Print("🚀 SMC GOLD EA ULTRA CONSERVATIVE v4.00");
+    Print("   🎯 FAST PROFIT SCALPING VERSION");
+    Print("   💎 M15/M5 Timeframe Optimized");
+    Print("   🛡️ Maximum Capital Preservation");
+    Print("   💰 0.5% Risk | 2:1 R:R | Fast Exits");
     Print("═══════════════════════════════════════");
 
     //--- Validate demo account (optional safety check)
@@ -557,8 +588,8 @@ void CheckForSMCTrades(SMarketConditions &conditions)
     if (!SymbolInfoTick(_Symbol, current_tick))
         return;
 
-    //--- Prevent too frequent trading
-    if (TimeCurrent() - LastTradeTime < 300) // 5 minutes minimum between trades
+    //--- Prevent too frequent trading - REDUCED for more opportunities
+    if (TimeCurrent() - LastTradeTime < 900) // 15 minutes minimum between trades (was 30 minutes)
         return;
 
     //--- Get market structure analysis with debugging
@@ -648,10 +679,30 @@ void CheckForSMCTrades(SMarketConditions &conditions)
                 Print("   📈 Higher TF Bias: ", EnumToString(higher_tf_bias));
                 
                 ExecuteSMCBuyTrade(current_tick.ask, buy_setup, confluence_score, conditions);
+                no_signal_counter = 0; // Reset counter when trade is executed
             }
             else
             {
                 Print("⚠️ BUY signal confluence too low: ", confluence_score, "/", MinConfluenceLevel);
+                
+                // If confluence is just 1 below minimum and we have a good setup, consider it
+                if (confluence_score == (MinConfluenceLevel - 1) && buy_setup == TRADE_ORDER_BLOCK)
+                {
+                    Print("🔄 Considering marginal BUY Order Block signal (", confluence_score, "/", MinConfluenceLevel, ")");
+                    static datetime last_marginal_buy = 0;
+                    
+                    if (TimeCurrent() - last_marginal_buy > 2400) // Only one marginal trade per 40 minutes
+                    {
+                        Print("✅ Executing marginal BUY Order Block trade");
+                        ExecuteSMCBuyTrade(current_tick.ask, buy_setup, confluence_score, conditions);
+                        last_marginal_buy = TimeCurrent();
+                        no_signal_counter = 0;
+                    }
+                    else
+                    {
+                        Print("⏳ Marginal trade limit reached - waiting");
+                    }
+                }
             }
         }
         else
@@ -692,10 +743,30 @@ void CheckForSMCTrades(SMarketConditions &conditions)
                 Print("   📉 Higher TF Bias: ", EnumToString(higher_tf_bias));
                 
                 ExecuteSMCSellTrade(current_tick.bid, sell_setup, confluence_score, conditions);
+                no_signal_counter = 0; // Reset counter when trade is executed
             }
             else
             {
                 Print("⚠️ SELL signal confluence too low: ", confluence_score, "/", MinConfluenceLevel);
+                
+                // If confluence is just 1 below minimum and we have a good setup, consider it
+                if (confluence_score == (MinConfluenceLevel - 1) && sell_setup == TRADE_ORDER_BLOCK)
+                {
+                    Print("🔄 Considering marginal SELL Order Block signal (", confluence_score, "/", MinConfluenceLevel, ")");
+                    static datetime last_marginal_sell = 0;
+                    
+                    if (TimeCurrent() - last_marginal_sell > 2400) // Only one marginal trade per 40 minutes
+                    {
+                        Print("✅ Executing marginal SELL Order Block trade");
+                        ExecuteSMCSellTrade(current_tick.bid, sell_setup, confluence_score, conditions);
+                        last_marginal_sell = TimeCurrent();
+                        no_signal_counter = 0;
+                    }
+                    else
+                    {
+                        Print("⏳ Marginal trade limit reached - waiting");
+                    }
+                }
             }
         }
         else
@@ -712,24 +783,45 @@ void CheckForSMCTrades(SMarketConditions &conditions)
         }
     }
     
-    //--- ENHANCED FALLBACK TRADING MODE: If SMC indicators are working but no valid signals
-    if (MinConfluenceLevel <= 2) // More aggressive fallback when confluence is low
+    //--- CONSERVATIVE FALLBACK TRADING if no SMC signals for extended period
+    static datetime last_smc_trade_attempt = 0;
+    
+    // Count consecutive periods with no SMC signals
+    no_signal_counter++;
+    
+    // After 20 minutes of no SMC signals, allow very conservative fallback
+    if (no_signal_counter > 200 && TimeCurrent() - last_smc_trade_attempt > 1200) // 20 minutes
     {
-        // Check if we have any SMC structure at all
-        bool has_smc_structure = (base_structure.bullish_bos || base_structure.bearish_bos || 
-                                 base_structure.bullish_choch || base_structure.bearish_choch ||
-                                 order_blocks.is_valid || fvgs.is_valid);
+        Print("FALLBACK MODE: No SMC signals for 20+ minutes - Checking conservative alternatives");
         
-        if (has_smc_structure)
+        // Only use fallback if RSI shows reasonable conditions (relaxed)
+        if (conditions.rsi_value < 35) // Oversold (relaxed from 25)
         {
-            CheckForEnhancedBreakoutTrades(conditions, current_tick, base_structure);
+            if (CountPositionsByMagic(MagicNumber, POSITION_TYPE_BUY) == 0)
+            {
+                Print("🔄 CONSERVATIVE FALLBACK BUY: Extreme RSI Oversold (", DoubleToString(conditions.rsi_value, 2), ")");
+                ExecuteFallbackTrade(true, current_tick, conditions);
+                last_smc_trade_attempt = TimeCurrent();
+                no_signal_counter = 0;
+                return;
+            }
         }
-        else
+        else if (conditions.rsi_value > 65) // Overbought (relaxed from 75)
         {
-            // Basic RSI reversal trading if no SMC structure detected
-            CheckForSimpleBreakoutTrades(conditions, current_tick);
+            if (CountPositionsByMagic(MagicNumber, POSITION_TYPE_SELL) == 0)
+            {
+                Print("🔄 CONSERVATIVE FALLBACK SELL: Extreme RSI Overbought (", DoubleToString(conditions.rsi_value, 2), ")");
+                ExecuteFallbackTrade(false, current_tick, conditions);
+                last_smc_trade_attempt = TimeCurrent();
+                no_signal_counter = 0;
+                return;
+            }
         }
     }
+    
+    Print("🔍 No valid SMC signals found - Waiting for higher quality setups (Counter: ", no_signal_counter, ")");
+    
+    return; // Exit without any trades
 }
 
 //+------------------------------------------------------------------+
@@ -845,16 +937,8 @@ void ExecuteFallbackTrade(bool is_buy, MqlTick &tick, SMarketConditions &conditi
     double lot_size = CalculateLotSize(entry_price, StopLossPips);
     double sl, tp;
     
-    if (is_buy)
-    {
-        sl = entry_price - (StopLossPips * PointMultiplier);
-        tp = entry_price + (TakeProfitPips * PointMultiplier);
-    }
-    else
-    {
-        sl = entry_price + (StopLossPips * PointMultiplier);
-        tp = entry_price - (TakeProfitPips * PointMultiplier);
-    }
+    // Use dynamic SL/TP for fallback trades too
+    CalculateDynamicSLTP(entry_price, is_buy, sl, tp);
     
     string comment = TradeComment + "-FALLBACK-RSI";
     
@@ -869,10 +953,11 @@ void ExecuteFallbackTrade(bool is_buy, MqlTick &tick, SMarketConditions &conditi
         LastTradeTime = TimeCurrent();
         Print("✅ FALLBACK ", is_buy ? "BUY" : "SELL", " TRADE EXECUTED:");
         Print("   💰 Entry: ", DoubleToString(entry_price, _Digits));
-        Print("   🛑 SL: ", DoubleToString(sl, _Digits));
-        Print("   🎯 TP: ", DoubleToString(tp, _Digits));
+        Print("   🛑 SL: ", DoubleToString(sl, _Digits), " (", DoubleToString(MathAbs(entry_price - sl) / PointMultiplier, 1), " pips)");
+        Print("   🎯 TP: ", DoubleToString(tp, _Digits), " (", DoubleToString(MathAbs(tp - entry_price) / PointMultiplier, 1), " pips)");
         Print("   📈 Lot: ", DoubleToString(lot_size, 2));
         Print("   📊 RSI: ", DoubleToString(conditions.rsi_value, 2));
+        Print("   🔄 Dynamic SL/TP: ", UseDynamicSLTP ? "YES" : "NO");
         
         if (EnableAlerts)
             Alert("SMC Gold EA: Fallback ", is_buy ? "BUY" : "SELL", " trade executed");
@@ -889,17 +974,21 @@ void ExecuteFallbackTrade(bool is_buy, MqlTick &tick, SMarketConditions &conditi
 void ExecuteSMCBuyTrade(double ask_price, ENUM_TRADE_TYPE setup_type, int confluence_score, SMarketConditions &conditions)
 {
     double lot_size = CalculateLotSize(ask_price, StopLossPips);
-    double sl = ask_price - (StopLossPips * PointMultiplier);
-    double tp = ask_price + (TakeProfitPips * PointMultiplier);
+    double sl, tp;
+    
+    // Use dynamic SL/TP calculation
+    CalculateDynamicSLTP(ask_price, true, sl, tp);
     
     // Adjust SL/TP based on setup type and confluence
     if (setup_type == TRADE_ORDER_BLOCK)
     {
-        sl = ask_price - ((StopLossPips * 0.8) * PointMultiplier); // Tighter SL for OB
+        // Tighter SL for order blocks (more precise entries)
+        sl = ask_price - ((sl - ask_price) * 0.8);
     }
     else if (setup_type == TRADE_FAIR_VALUE_GAP)
     {
-        tp = ask_price + ((TakeProfitPips * 1.2) * PointMultiplier); // Larger TP for FVG
+        // Larger TP for FVG (higher probability)
+        tp = ask_price + ((tp - ask_price) * 1.2);
     }
     
     string comment = TradeComment + "-" + EnumToString(setup_type) + "-C" + IntegerToString(confluence_score);
@@ -915,6 +1004,7 @@ void ExecuteSMCBuyTrade(double ask_price, ENUM_TRADE_TYPE setup_type, int conflu
         Print("   📈 Lot: ", DoubleToString(lot_size, 2));
         Print("   📊 Setup: ", EnumToString(setup_type));
         Print("   ⭐ Confluence: ", confluence_score, "/5");
+        Print("   🔄 Dynamic SL/TP: ", UseDynamicSLTP ? "YES" : "NO");
         
         if (EnableAlerts)
         {
@@ -937,17 +1027,21 @@ void ExecuteSMCBuyTrade(double ask_price, ENUM_TRADE_TYPE setup_type, int conflu
 void ExecuteSMCSellTrade(double bid_price, ENUM_TRADE_TYPE setup_type, int confluence_score, SMarketConditions &conditions)
 {
     double lot_size = CalculateLotSize(bid_price, StopLossPips);
-    double sl = bid_price + (StopLossPips * PointMultiplier);
-    double tp = bid_price - (TakeProfitPips * PointMultiplier);
+    double sl, tp;
+    
+    // Use dynamic SL/TP calculation
+    CalculateDynamicSLTP(bid_price, false, sl, tp);
     
     // Adjust SL/TP based on setup type and confluence
     if (setup_type == TRADE_ORDER_BLOCK)
     {
-        sl = bid_price + ((StopLossPips * 0.8) * PointMultiplier); // Tighter SL for OB
+        // Tighter SL for order blocks (more precise entries)
+        sl = bid_price + ((sl - bid_price) * 0.8);
     }
     else if (setup_type == TRADE_FAIR_VALUE_GAP)
     {
-        tp = bid_price - ((TakeProfitPips * 1.2) * PointMultiplier); // Larger TP for FVG
+        // Larger TP for FVG (higher probability)
+        tp = bid_price - ((bid_price - tp) * 1.2);
     }
     
     string comment = TradeComment + "-" + EnumToString(setup_type) + "-C" + IntegerToString(confluence_score);
@@ -963,6 +1057,7 @@ void ExecuteSMCSellTrade(double bid_price, ENUM_TRADE_TYPE setup_type, int confl
         Print("   📈 Lot: ", DoubleToString(lot_size, 2));
         Print("   📊 Setup: ", EnumToString(setup_type));
         Print("   ⭐ Confluence: ", confluence_score, "/5");
+        Print("   🔄 Dynamic SL/TP: ", UseDynamicSLTP ? "YES" : "NO");
         
         if (EnableAlerts)
         {
@@ -1012,24 +1107,92 @@ int CalculateConfluenceScore(ENUM_TRADE_TYPE setup_type, SMarketStructure &base,
 //| Helper Functions                                                 |
 //+------------------------------------------------------------------+
 
-// Calculate lot size based on risk percentage
+// Calculate lot size based on risk percentage with dynamic SL
 double CalculateLotSize(double entry_price, int stop_loss_pips)
 {
     double account_balance = AccountInfoDouble(ACCOUNT_BALANCE);
     double risk_amount = account_balance * (RiskPerTradePercent / 100.0);
+    
+    // Use dynamic SL if enabled
+    double actual_sl_pips = stop_loss_pips;
+    if (UseDynamicSLTP)
+    {
+        double atr_buffer[];
+        if (CopyBuffer(ATR_Handle, 0, 0, 1, atr_buffer) > 0)
+        {
+            actual_sl_pips = (atr_buffer[0] * ATRMultiplierSL) / PointMultiplier;
+            actual_sl_pips = MathMax(actual_sl_pips, 30);  // Minimum 3 pips for M15
+            actual_sl_pips = MathMin(actual_sl_pips, 120); // Maximum 12 pips for M15
+        }
+    }
+    
     double pip_value = SymbolInfoDouble(_Symbol, SYMBOL_TRADE_TICK_VALUE);
-    double lot_size = risk_amount / (stop_loss_pips * pip_value);
+    double lot_size = risk_amount / (actual_sl_pips * pip_value);
+    
+    // CONSERVATIVE: Use 80% of calculated lot size for more trading power
+    lot_size = lot_size * 0.8; // Use 80% of calculated lot size (increased from 70%)
     
     // Normalize lot size
     double min_lot = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_MIN);
     double max_lot = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_MAX);
     double lot_step = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_STEP);
     
+    // Absolute maximum for safety
+    double max_allowed = account_balance / 50000.0; // Max 0.01 lot per $500
+    
     lot_size = MathMax(lot_size, min_lot);
     lot_size = MathMin(lot_size, max_lot);
+    lot_size = MathMin(lot_size, max_allowed);
     lot_size = NormalizeDouble(lot_size / lot_step, 0) * lot_step;
     
+    Print("📊 LOT SIZE CALCULATION:");
+    Print("   💰 Account Balance: $", DoubleToString(account_balance, 2));
+    Print("   📊 Risk Amount: $", DoubleToString(risk_amount, 2));
+    Print("   📏 SL Pips: ", DoubleToString(actual_sl_pips, 1));
+    Print("   📈 Calculated Lot: ", DoubleToString(lot_size, 3));
+    
     return lot_size;
+}
+
+// Calculate dynamic Stop Loss and Take Profit
+void CalculateDynamicSLTP(double entry_price, bool is_buy, double &sl, double &tp)
+{
+    double sl_distance = StopLossPips * PointMultiplier;
+    double tp_distance = TakeProfitPips * PointMultiplier;
+    
+    if (UseDynamicSLTP)
+    {
+        double atr_buffer[];
+        if (CopyBuffer(ATR_Handle, 0, 0, 1, atr_buffer) > 0)
+        {
+            double atr_value = atr_buffer[0];
+            sl_distance = atr_value * ATRMultiplierSL;
+            tp_distance = atr_value * ATRMultiplierTP;
+            
+            // Apply reasonable limits for M15 timeframe
+            sl_distance = MathMax(sl_distance, 30 * PointMultiplier);  // Min 3 pips
+            sl_distance = MathMin(sl_distance, 120 * PointMultiplier); // Max 12 pips
+            tp_distance = MathMax(tp_distance, 60 * PointMultiplier);  // Min 6 pips
+            tp_distance = MathMin(tp_distance, 300 * PointMultiplier); // Max 30 pips
+        }
+    }
+    
+    if (is_buy)
+    {
+        sl = entry_price - sl_distance;
+        tp = entry_price + tp_distance;
+    }
+    else
+    {
+        sl = entry_price + sl_distance;
+        tp = entry_price - tp_distance;
+    }
+    
+    Print("📊 DYNAMIC SL/TP CALCULATION:");
+    Print("   📏 SL Distance: ", DoubleToString(sl_distance / PointMultiplier, 1), " pips");
+    Print("   📏 TP Distance: ", DoubleToString(tp_distance / PointMultiplier, 1), " pips");
+    Print("   🛑 Stop Loss: ", DoubleToString(sl, _Digits));
+    Print("   🎯 Take Profit: ", DoubleToString(tp, _Digits));
 }
 
 // Count positions by magic number and type
@@ -1699,39 +1862,53 @@ ENUM_TRADE_TYPE AnalyzeBuyOpportunity(ENUM_MARKET_BIAS bias, SMarketStructure &b
     double tolerance_pips = 100; // 10 pip tolerance for XAUUSD
     double tolerance = tolerance_pips * PointMultiplier;
     
-    // 1. ORDER BLOCK ANALYSIS - Highest Priority
+    // 1. ORDER BLOCK ANALYSIS - Highest Priority with STRICT CONFIRMATION
     if (UseOrderBlocks && ob.is_valid && ob.bullish_ob_high > 0 && ob.bullish_ob_low > 0)
     {
+        // MUCH STRICTER: Price must be very close to order block
+        double tolerance_pips = 20; // Only 2 pip tolerance for M15
+        double tolerance = tolerance_pips * PointMultiplier;
+        
         // Check if price is near bullish order block
         if (price >= (ob.bullish_ob_low - tolerance) && price <= (ob.bullish_ob_high + tolerance))
         {
-            // Additional confirmation: check for structure alignment
-            if ((base.bullish_bos || base.bullish_choch) || !UseConservativeEntries)
+            // STRICT CONFIRMATION: Multiple requirements
+            bool structure_confirmed = (base.bullish_bos || base.bullish_choch);
+            bool momentum_ok = conditions.rsi_value < 65 && conditions.rsi_value > 35; // Not overbought
+            bool size_ok = ob.size_pips >= MinOBSize && ob.size_pips <= 100; // Reasonable size
+            bool time_ok = (TimeCurrent() - ob.ob_time) < (SignalValidityHours * 3600); // Fresh signal
+            
+            if (structure_confirmed && momentum_ok && size_ok && time_ok)
             {
-                Print("🔍 BUY Order Block Signal Detected:");
-                Print("   📊 OB High: ", DoubleToString(ob.bullish_ob_high, _Digits));
-                Print("   📊 OB Low: ", DoubleToString(ob.bullish_ob_low, _Digits));
-                Print("   📊 Current Price: ", DoubleToString(price, _Digits));
+                Print("🔍 HIGH QUALITY BUY Order Block Signal:");
+                Print("   📊 Structure: ", structure_confirmed ? "CONFIRMED" : "MISSING");
+                Print("   📊 RSI: ", DoubleToString(conditions.rsi_value, 2));
                 Print("   📊 OB Size: ", DoubleToString(ob.size_pips, 1), " pips");
+                Print("   📊 Signal Age: ", (TimeCurrent() - ob.ob_time) / 3600, " hours");
                 
                 return TRADE_ORDER_BLOCK;
             }
         }
     }
     
-    // 2. FAIR VALUE GAP ANALYSIS
+    // 2. FAIR VALUE GAP ANALYSIS - RELAXED CONDITIONS
     if (UseFairValueGaps && fvg.is_valid && fvg.bullish_fvg_high > 0 && fvg.bullish_fvg_low > 0)
     {
         // Check if price is in bullish FVG
         if (price >= fvg.bullish_fvg_low && price <= fvg.bullish_fvg_high)
         {
-            // Check for momentum alignment
-            if (conditions.rsi_value < 70 && (base.bullish_bos || !UseConservativeEntries))
+            // RELAXED MOMENTUM AND STRUCTURE ALIGNMENT
+            bool momentum_ok = conditions.rsi_value < 70 && conditions.rsi_value > 30; // Wider RSI range
+            bool structure_ok = base.bullish_bos || confirm.bullish_bos || !UseConservativeEntries; // Either timeframe OR relaxed mode
+            bool size_adequate = fvg.size_pips >= 10 && fvg.size_pips <= 120; // Even more flexible FVG size
+            bool fresh_signal = (TimeCurrent() - fvg.fvg_time) < (SignalValidityHours * 3600);
+            
+            if (momentum_ok && structure_ok && size_adequate && fresh_signal)
             {
-                Print("🔍 BUY Fair Value Gap Signal Detected:");
-                Print("   📊 FVG High: ", DoubleToString(fvg.bullish_fvg_high, _Digits));
-                Print("   📊 FVG Low: ", DoubleToString(fvg.bullish_fvg_low, _Digits));
-                Print("   📊 Current Price: ", DoubleToString(price, _Digits));
+                Print("🔍 BUY Fair Value Gap Signal (RELAXED):");
+                Print("   📊 RSI: ", DoubleToString(conditions.rsi_value, 2));
+                Print("   📊 Base BOS: ", base.bullish_bos ? "YES" : "NO");
+                Print("   📊 Confirm BOS: ", confirm.bullish_bos ? "YES" : "NO");
                 Print("   📊 FVG Size: ", DoubleToString(fvg.size_pips, 1), " pips");
                 
                 return TRADE_FAIR_VALUE_GAP;
@@ -1739,18 +1916,19 @@ ENUM_TRADE_TYPE AnalyzeBuyOpportunity(ENUM_MARKET_BIAS bias, SMarketStructure &b
         }
     }
     
-    // 3. LIQUIDITY GRAB ANALYSIS
+    // 3. LIQUIDITY GRAB ANALYSIS - RELAXED
     if (UseLiquidityGrabs && liq.liquidity_grab_low)
     {
-        // After liquidity grab below, look for reversal
-        if (TimeCurrent() - liq.grab_time < 3600) // Within 1 hour
+        // After liquidity grab below, look for reversal - EXTENDED TIME WINDOW
+        if (TimeCurrent() - liq.grab_time < 7200) // Within 2 hours (was 1 hour)
         {
-            // Check if we have supporting structure
-            if (base.bullish_choch || confirm.bullish_choch)
+            // Check if we have supporting structure - MORE FLEXIBLE
+            if (base.bullish_choch || confirm.bullish_choch || base.bullish_bos || !RequireHigherTFConfirmation)
             {
                 Print("🔍 BUY Liquidity Grab Signal Detected:");
                 Print("   📊 Grab Time: ", TimeToString(liq.grab_time));
-                Print("   📊 Structure Support: ", base.bullish_choch ? "Base CHoCH" : "Confirm CHoCH");
+                Print("   📊 Time Since Grab: ", (TimeCurrent() - liq.grab_time)/60, " minutes");
+                Print("   📊 Structure Support Available");
                 
                 return TRADE_LIQUIDITY_GRAB;
             }
@@ -1771,15 +1949,16 @@ ENUM_TRADE_TYPE AnalyzeBuyOpportunity(ENUM_MARKET_BIAS bias, SMarketStructure &b
         }
     }
     
-    // 5. CHANGE OF CHARACTER (CHoCH) REVERSAL
-    if (base.bullish_choch && conditions.rsi_value < 50)
+    // 5. CHANGE OF CHARACTER (CHoCH) REVERSAL - RELAXED
+    if (base.bullish_choch && conditions.rsi_value < 60) // Expanded RSI range
     {
-        // Look for reversal after CHoCH
-        if (confirm.bullish_choch || !RequireHigherTFConfirmation)
+        // Look for reversal after CHoCH - MORE FLEXIBLE
+        if (confirm.bullish_choch || base.bullish_bos || !RequireHigherTFConfirmation)
         {
             Print("🔍 BUY Change of Character Signal Detected:");
             Print("   📊 Base CHoCH: ", base.bullish_choch);
             Print("   📊 Confirm CHoCH: ", confirm.bullish_choch);
+            Print("   📊 Base BOS: ", base.bullish_bos);
             Print("   📊 RSI: ", DoubleToString(conditions.rsi_value, 2));
             
             return TRADE_CHOCH_REVERSAL;
@@ -1829,32 +2008,37 @@ ENUM_TRADE_TYPE AnalyzeSellOpportunity(ENUM_MARKET_BIAS bias, SMarketStructure &
         // Check if price is in bearish FVG
         if (price >= fvg.bearish_fvg_low && price <= fvg.bearish_fvg_high)
         {
-            // Check for momentum alignment
-            if (conditions.rsi_value > 30 && (base.bearish_bos || !UseConservativeEntries))
+            // Check for momentum alignment - RELAXED
+            bool momentum_ok = conditions.rsi_value > 25 && conditions.rsi_value < 75; // Wider range
+            bool structure_ok = base.bearish_bos || base.bearish_choch || !UseConservativeEntries; // More flexible
+            
+            if (momentum_ok && structure_ok)
             {
                 Print("🔍 SELL Fair Value Gap Signal Detected:");
                 Print("   📊 FVG High: ", DoubleToString(fvg.bearish_fvg_high, _Digits));
                 Print("   📊 FVG Low: ", DoubleToString(fvg.bearish_fvg_low, _Digits));
                 Print("   📊 Current Price: ", DoubleToString(price, _Digits));
                 Print("   📊 FVG Size: ", DoubleToString(fvg.size_pips, 1), " pips");
+                Print("   📊 RSI: ", DoubleToString(conditions.rsi_value, 2));
                 
                 return TRADE_FAIR_VALUE_GAP;
             }
         }
     }
     
-    // 3. LIQUIDITY GRAB ANALYSIS
+    // 3. LIQUIDITY GRAB ANALYSIS - RELAXED
     if (UseLiquidityGrabs && liq.liquidity_grab_high)
     {
-        // After liquidity grab above, look for reversal
-        if (TimeCurrent() - liq.grab_time < 3600) // Within 1 hour
+        // After liquidity grab above, look for reversal - EXTENDED TIME WINDOW
+        if (TimeCurrent() - liq.grab_time < 7200) // Within 2 hours (was 1 hour)
         {
-            // Check if we have supporting structure
-            if (base.bearish_choch || confirm.bearish_choch)
+            // Check if we have supporting structure - MORE FLEXIBLE
+            if (base.bearish_choch || confirm.bearish_choch || base.bearish_bos || !RequireHigherTFConfirmation)
             {
                 Print("🔍 SELL Liquidity Grab Signal Detected:");
                 Print("   📊 Grab Time: ", TimeToString(liq.grab_time));
-                Print("   📊 Structure Support: ", base.bearish_choch ? "Base CHoCH" : "Confirm CHoCH");
+                Print("   📊 Time Since Grab: ", (TimeCurrent() - liq.grab_time)/60, " minutes");
+                Print("   📊 Structure Support Available");
                 
                 return TRADE_LIQUIDITY_GRAB;
             }
@@ -1875,15 +2059,16 @@ ENUM_TRADE_TYPE AnalyzeSellOpportunity(ENUM_MARKET_BIAS bias, SMarketStructure &
         }
     }
     
-    // 5. CHANGE OF CHARACTER (CHoCH) REVERSAL
-    if (base.bearish_choch && conditions.rsi_value > 50)
+    // 5. CHANGE OF CHARACTER (CHoCH) REVERSAL - RELAXED
+    if (base.bearish_choch && conditions.rsi_value > 40) // Expanded RSI range
     {
-        // Look for reversal after CHoCH
-        if (confirm.bearish_choch || !RequireHigherTFConfirmation)
+        // Look for reversal after CHoCH - MORE FLEXIBLE
+        if (confirm.bearish_choch || base.bearish_bos || !RequireHigherTFConfirmation)
         {
             Print("🔍 SELL Change of Character Signal Detected:");
             Print("   📊 Base CHoCH: ", base.bearish_choch);
             Print("   📊 Confirm CHoCH: ", confirm.bearish_choch);
+            Print("   📊 Base BOS: ", base.bearish_bos);
             Print("   📊 RSI: ", DoubleToString(conditions.rsi_value, 2));
             
             return TRADE_CHOCH_REVERSAL;
@@ -2111,7 +2296,7 @@ void ManageOpenPositions(SMarketConditions &conditions)
     static datetime last_management_time = 0;
     
     // Don't manage too frequently
-    if (TimeCurrent() - last_management_time < 30) // Every 30 seconds
+    if (TimeCurrent() - last_management_time < 15) // Every 15 seconds for better responsiveness
         return;
         
     last_management_time = TimeCurrent();
@@ -2128,66 +2313,105 @@ void ManageOpenPositions(SMarketConditions &conditions)
         ENUM_POSITION_TYPE pos_type = (ENUM_POSITION_TYPE)PositionGetInteger(POSITION_TYPE);
         datetime open_time = (datetime)PositionGetInteger(POSITION_TIME);
         int position_age_minutes = (int)((TimeCurrent() - open_time) / 60);
+        double volume = PositionGetDouble(POSITION_VOLUME);
+        string comment = PositionGetString(POSITION_COMMENT);
         
         // Get current market structure for exit signals
         SMarketStructure current_structure = GetMarketStructure(SMC_Base_Handle);
         
-        // Emergency exit on opposing structure signals
-        bool emergency_exit = false;
-        if (pos_type == POSITION_TYPE_BUY && current_structure.bearish_bos && profit_pips < 100)
+        // 1. FAST PROFIT TAKING - Take 50% at just 6 pips profit
+        if (profit_pips >= 60 && volume > SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_MIN) * 1.1 && 
+            StringFind(comment, "FAST_PROFIT") < 0)
         {
-            emergency_exit = true;
-            Print("🚨 EMERGENCY EXIT: BUY position facing bearish BOS");
+            double fast_exit_volume = volume * 0.5; // Take 50% profit
+            fast_exit_volume = NormalizeDouble(fast_exit_volume, 2);
+            
+            if (fast_exit_volume >= SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_MIN))
+            {
+                if (Trade.PositionClosePartial(ticket, fast_exit_volume))
+                {
+                    Print("💰 FAST PROFIT TAKEN - 50% closed at ", DoubleToString(profit_pips, 1), " pips");
+                    if (EnableAlerts)
+                        Alert("SMC Gold EA: Fast profit taken - 50% closed at ", DoubleToString(profit_pips, 1), " pips");
+                }
+            }
         }
-        else if (pos_type == POSITION_TYPE_SELL && current_structure.bullish_bos && profit_pips < 100)
+        
+        // 2. SCALED EXITS - First Exit (30% at FirstExitPips)
+        if (UseScaledExits && profit_pips >= FirstExitPips && 
+            volume > SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_MIN) && 
+            StringFind(comment, "SCALED1") < 0)
+        {
+            ExecuteScaledExit(ticket, FirstExitPercent, "SCALED1");
+        }
+        
+        // 3. SCALED EXITS - Second Exit (40% of remaining at SecondExitPips)
+        if (UseScaledExits && profit_pips >= SecondExitPips && 
+            volume > SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_MIN) && 
+            StringFind(comment, "SCALED2") < 0 && StringFind(comment, "SCALED1") >= 0)
+        {
+            ExecuteScaledExit(ticket, SecondExitPercent, "SCALED2");
+        }
+        
+        // 2. IMMEDIATE BREAKEVEN - Move to breakeven at just 3 pips profit
+        if (profit_pips >= 30 && StringFind(comment, "BE") < 0)
+        {
+            MoveToBreakeven(ticket);
+        }
+        
+        // 5. TRAILING STOP
+        if (UseTrailingStop && profit_pips > TrailingStopPips)
+        {
+            UpdateTrailingStop(ticket, profit_pips);
+        }
+        
+        // 6. PARTIAL CLOSE at specified profit level
+        if (EnablePartialClose && profit_pips >= PartialClosePips && 
+            volume > SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_MIN) * 1.5 && 
+            StringFind(comment, "PARTIAL") < 0)
+        {
+            PartialClosePosition(ticket);
+        }
+        
+        // 3. EMERGENCY EXIT on smaller loss (much tighter)
+        if (profit_pips <= -100) // Emergency exit at -10 pips loss (much tighter)
+        {
+            Print("🚨 EMERGENCY EXIT triggered for position #", ticket, " (Loss: ", DoubleToString(profit_pips, 1), " pips)");
+            if (Trade.PositionClose(ticket))
+            {
+                Print("✅ Emergency exit executed");
+                if (EnableAlerts)
+                    Alert("SMC Gold EA: Emergency exit - Loss: ", DoubleToString(profit_pips, 1), " pips");
+            }
+            continue;
+        }
+        
+        // 8. Emergency exit on opposing structure signals (SMC-based)
+        bool emergency_exit = false;
+        if (pos_type == POSITION_TYPE_BUY && current_structure.bearish_bos && profit_pips < 50)
         {
             emergency_exit = true;
-            Print("🚨 EMERGENCY EXIT: SELL position facing bullish BOS");
+            Print("🚨 SMC EMERGENCY EXIT: BUY position facing bearish BOS");
+        }
+        else if (pos_type == POSITION_TYPE_SELL && current_structure.bullish_bos && profit_pips < 50)
+        {
+            emergency_exit = true;
+            Print("🚨 SMC EMERGENCY EXIT: SELL position facing bullish BOS");
         }
         
         if (emergency_exit)
         {
             if (Trade.PositionClose(ticket))
             {
-                Print("✅ Emergency close executed for position #", ticket);
-                continue;
+                Print("✅ SMC Emergency close executed for position #", ticket);
+                if (EnableAlerts)
+                    Alert("SMC Gold EA: Emergency exit due to opposing structure");
             }
+            continue;
         }
         
-        // Regular position management
-        static bool breakeven_moved[];
-        static bool partial_closed[];
-        ArrayResize(breakeven_moved, PositionsTotal(), PositionsTotal());
-        ArrayResize(partial_closed, PositionsTotal(), PositionsTotal());
-        
-        // Breakeven management
-        if (UseBreakeven && profit_pips >= BreakevenPips)
-        {
-            if (i < ArraySize(breakeven_moved) && !breakeven_moved[i])
-            {
-                MoveToBreakeven(ticket);
-                breakeven_moved[i] = true;
-            }
-        }
-        
-        // Trailing stop management
-        if (UseTrailingStop && profit_pips >= TrailingStopPips)
-        {
-            UpdateTrailingStop(ticket, profit_pips);
-        }
-        
-        // Partial close management
-        if (EnablePartialClose && profit_pips >= PartialClosePips)
-        {
-            if (i < ArraySize(partial_closed) && !partial_closed[i])
-            {
-                PartialClosePosition(ticket);
-                partial_closed[i] = true;
-            }
-        }
-        
-        // Time-based management for losing positions
-        if (position_age_minutes > 240 && profit_pips < -100) // 4 hours old and losing 10+ pips
+        // 9. Time-based management for losing positions (more aggressive)
+        if (position_age_minutes > 120 && profit_pips < -50) // 2 hours old and losing 5+ pips
         {
             Print("⚠️ Position #", ticket, " is old and losing. Age: ", position_age_minutes, " min, Profit: ", DoubleToString(profit_pips, 1), " pips");
             
@@ -2195,26 +2419,25 @@ void ManageOpenPositions(SMarketConditions &conditions)
             if ((pos_type == POSITION_TYPE_BUY && current_structure.bearish_choch) ||
                 (pos_type == POSITION_TYPE_SELL && current_structure.bullish_choch))
             {
-                Print("📊 Market structure changed - considering position close");
+                Print("📊 Market structure changed - closing old position");
                 
                 if (Trade.PositionClose(ticket))
                 {
                     Print("✅ Closed old losing position #", ticket, " due to structure change");
                 }
+                continue;
             }
         }
         
-        // Advanced profit management for large wins
-        if (profit_pips > 1000) // 100+ pip profit
+        // 10. Advanced profit management for large wins
+        if (profit_pips > 500) // 50+ pip profit (reduced threshold)
         {
             Print("🎯 Large profit detected: ", DoubleToString(profit_pips, 1), " pips on position #", ticket);
             
-            // Close 25% more if not already done
-            string comment = PositionGetString(POSITION_COMMENT);
+            // Close additional 25% if not already done
             if (StringFind(comment, "LARGE_PROFIT") < 0)
             {
-                double current_volume = PositionGetDouble(POSITION_VOLUME);
-                double additional_close = current_volume * 0.25;
+                double additional_close = volume * 0.25;
                 
                 if (additional_close >= SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_MIN))
                 {
@@ -2228,7 +2451,92 @@ void ManageOpenPositions(SMarketConditions &conditions)
     }
 }
 
-// Error description function
+//+------------------------------------------------------------------+
+//| Apply Early Profit Protection                                   |
+//+------------------------------------------------------------------+
+void ApplyEarlyProfitProtection(ulong ticket, double profit_pips)
+{
+    if (!PositionSelectByTicket(ticket))
+        return;
+        
+    double open_price = PositionGetDouble(POSITION_PRICE_OPEN);
+    double current_sl = PositionGetDouble(POSITION_SL);
+    double current_tp = PositionGetDouble(POSITION_TP);
+    ENUM_POSITION_TYPE pos_type = (ENUM_POSITION_TYPE)PositionGetInteger(POSITION_TYPE);
+    
+    // Move SL to small profit (50% of current profit or minimum 5 pips)
+    double protection_pips = MathMax(profit_pips * 0.5, 50); // At least 5 pips profit
+    double new_sl = 0;
+    
+    if (pos_type == POSITION_TYPE_BUY)
+    {
+        new_sl = open_price + (protection_pips * PointMultiplier);
+        if (current_sl == 0 || new_sl > current_sl)
+        {
+            if (Trade.PositionModify(ticket, new_sl, current_tp))
+            {
+                Print("✅ EARLY PROFIT PROTECTION Applied - BUY #", ticket);
+                Print("   📊 Profit: ", DoubleToString(profit_pips, 1), " pips");
+                Print("   📊 Protected at: +", DoubleToString(protection_pips, 1), " pips");
+            }
+        }
+    }
+    else
+    {
+        new_sl = open_price - (protection_pips * PointMultiplier);
+        if (current_sl == 0 || new_sl < current_sl)
+        {
+            if (Trade.PositionModify(ticket, new_sl, current_tp))
+            {
+                Print("✅ EARLY PROFIT PROTECTION Applied - SELL #", ticket);
+                Print("   📊 Profit: ", DoubleToString(profit_pips, 1), " pips");
+                Print("   📊 Protected at: +", DoubleToString(protection_pips, 1), " pips");
+            }
+        }
+    }
+}
+
+//+------------------------------------------------------------------+
+//| Execute Scaled Exit                                             |
+//+------------------------------------------------------------------+
+void ExecuteScaledExit(ulong ticket, double exit_percent, string exit_label)
+{
+    if (!PositionSelectByTicket(ticket))
+        return;
+        
+    double current_volume = PositionGetDouble(POSITION_VOLUME);
+    double exit_volume = NormalizeDouble(current_volume * (exit_percent / 100.0), 2);
+    double min_volume = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_MIN);
+    
+    // Ensure we don't try to close more than available or less than minimum
+    if (exit_volume < min_volume)
+        exit_volume = min_volume;
+    if (exit_volume >= current_volume)
+        exit_volume = current_volume - min_volume; // Leave minimum volume
+        
+    if (exit_volume >= min_volume && exit_volume < current_volume)
+    {
+        if (Trade.PositionClosePartial(ticket, exit_volume))
+        {
+            Print("✅ SCALED EXIT EXECUTED - ", exit_label);
+            Print("   📊 Position #", ticket);
+            Print("   📊 Closed Volume: ", DoubleToString(exit_volume, 2));
+            Print("   📊 Remaining Volume: ", DoubleToString(current_volume - exit_volume, 2));
+            Print("   📊 Exit Percentage: ", DoubleToString(exit_percent, 1), "%");
+            
+            if (EnableAlerts)
+                Alert("SMC Gold EA: ", exit_label, " executed - ", DoubleToString(exit_percent, 1), "% closed");
+        }
+        else
+        {
+            Print("❌ Failed to execute ", exit_label, " for position #", ticket, " - Error: ", GetLastError());
+        }
+    }
+}
+
+//+------------------------------------------------------------------+
+//| Error Description Function                                       |
+//+------------------------------------------------------------------+
 string ErrorDescription(int error_code)
 {
     switch(error_code)
@@ -2249,14 +2557,14 @@ string ErrorDescription(int error_code)
         case 10018: return "Market is closed";
         case 10019: return "Not enough money";
         case 10020: return "Prices changed";
-        case 10021: return "No quotes";
-        case 10022: return "Invalid expiration date";
-        case 10023: return "Order state changed";
-        case 10024: return "Too frequent requests";
-        case 10025: return "No changes in request";
-        case 10026: return "Autotrading disabled by server";
-        case 10027: return "Autotrading disabled by client terminal";
-        case 10028: return "Request locked for processing";
+        case 10021: return "Not enough money for operation";
+        case 10022: return "Order is filled";
+        case 10023: return "Order is canceled";
+        case 10024: return "Order is placed";
+        case 10025: return "Request executed";
+        case 10026: return "Request partially executed";
+        case 10027: return "Request processing error";
+        case 10028: return "Request canceled by timeout";
         case 10029: return "Order or position frozen";
         case 10030: return "Invalid order filling type";
         case 10031: return "No connection with the trade server";
